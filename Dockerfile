@@ -3,12 +3,13 @@
 # =========================
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 
-WORKDIR /app
+# Set workdir to backend folder
+WORKDIR /app/Homy-backend
 
-# Copy EVERYTHING from context
-COPY . .
+# Copy everything into container
+COPY . /app
 
-# Build the Spring Boot application
+# Build Spring Boot application
 RUN mvn clean package -DskipTests
 
 
@@ -19,8 +20,8 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
-# Copy the built jar
-COPY --from=build /app/target/*.jar app.jar
+# Copy built jar from build stage
+COPY --from=build /app/Homy-backend/target/*.jar app.jar
 
 EXPOSE 8080
 
