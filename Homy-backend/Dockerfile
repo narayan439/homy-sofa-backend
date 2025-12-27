@@ -1,35 +1,25 @@
-## Multi-stage Dockerfile for building and running the Spring Boot backend
-# - Build stage uses an official Maven + JDK image to produce the runnable jar
-# - Final stage runs the jar on a lightweight JRE image
+# ===============================
+# Build stage
+# ===============================
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
 
-### Usage
-# Build image (from repository root or inside backend/Homy-backend):
-# docker build -t homy-backend:latest .
-# Run:
-# docker run -p 8080:8080 --name homy-backend homy-backend:latest
-
-FROM maven:3.9.4-eclipse-temurin-17 AS build
-WORKDIR /workspace
-
-# Copy pom and sources
-COPY pom.xml .
-COPY mvnw mvnw
-COPY .mvn .mvn
-COPY src src
-
-# Use the Maven wrapper if present, otherwise use the image's mvn
-RUN if [ -x mvnw ]; then ./mvnw -B -DskipTests package; else mvn -B -DskipTests package; fi
-
-FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-# Copy the jar produced by the build stage
-COPY --from=build /workspace/target/*.jar ./app.jar
+COPY pom.xml .
+RUN mvn dependency:go-offline
 
-# Expose default Spring Boot port
+COPY src src
+RUN mvn clean package -DskipTests
+
+# ===============================
+# Runtime stage
+# ===============================
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+
+ENV JAVA_OPTS="-Xms256m -Xmx512m"
 EXPOSE 8080
 
-ENV JAVA_OPTS="-Xms128m -Xmx512m"
-
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
-
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8080} -jar app.jar"]
