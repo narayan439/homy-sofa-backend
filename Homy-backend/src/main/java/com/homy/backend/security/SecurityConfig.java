@@ -76,8 +76,11 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow the dev frontend origin. Use patterns to be flexible.
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:4200"));
+        // Allow the dev frontend origin and the production frontend origin on Railway.
+        configuration.setAllowedOriginPatterns(List.of(
+            "http://localhost:4200",
+            "https://homy-sofa-frontend-production.up.railway.app"
+        ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*", "Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);
