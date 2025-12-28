@@ -24,6 +24,9 @@ public class MailConfig {
     @Value("${spring.mail.password:}")
     private String mailPassword;
 
+    @Value("${spring.mail.protocol:smtp}")
+    private String mailProtocol;
+
     @Bean
     public JavaMailSender javaMailSender() {
         if (mailHost == null || mailHost.isEmpty() || mailHost.contains("example.com")) {
@@ -36,9 +39,20 @@ public class MailConfig {
         if (mailUser != null && !mailUser.isEmpty()) impl.setUsername(mailUser);
         if (mailPassword != null && !mailPassword.isEmpty()) impl.setPassword(mailPassword);
 
+        impl.setDefaultEncoding("UTF-8");
+
         Properties props = new Properties();
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", "true");
+        // Common SMTP properties
+        props.put("mail.transport.protocol", mailProtocol != null && !mailProtocol.isEmpty() ? mailProtocol : "smtp");
+        props.put("mail.smtp.auth", String.valueOf(true));
+        props.put("mail.smtp.starttls.enable", String.valueOf(true));
+        // reasonable timeouts
+        props.put("mail.smtp.connectiontimeout", "10000");
+        props.put("mail.smtp.timeout", "10000");
+        props.put("mail.smtp.writetimeout", "10000");
+        // allow trusting all hosts if using self-signed certs (can be overridden)
+        props.put("mail.smtp.ssl.trust", "*");
+
         impl.setJavaMailProperties(props);
         return impl;
     }

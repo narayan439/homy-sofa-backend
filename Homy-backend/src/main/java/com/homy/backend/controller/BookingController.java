@@ -85,6 +85,8 @@ public class BookingController {
             ServiceEntity svc = serviceRepository.findById(booking.getService()).orElse(null);
             if (svc != null && svc.getPrice() != null) {
                 booking.setPrice(svc.getPrice());
+                // Store human-readable service name instead of internal id
+                booking.setService(svc.getName());
             }
         }
 
