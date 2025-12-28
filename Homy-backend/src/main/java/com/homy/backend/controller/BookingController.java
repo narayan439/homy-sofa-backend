@@ -80,13 +80,20 @@ public class BookingController {
         // Link booking to customer
         booking.setCustomerId(customer.getId());
 
-        // Set price from service if not already set
-        if (booking.getPrice() == null && booking.getService() != null) {
-            ServiceEntity svc = serviceRepository.findById(booking.getService()).orElse(null);
-            if (svc != null && svc.getPrice() != null) {
-                booking.setPrice(svc.getPrice());
-                // Store human-readable service name instead of internal id
-                booking.setService(svc.getName());
+        // If booking.service looks like an internal id, try to resolve service entity
+        if (booking.getService() != null) {
+            try {
+                ServiceEntity svc = serviceRepository.findById(booking.getService()).orElse(null);
+                if (svc != null) {
+                    // Always store the human-readable service name for persistence and emails
+                    booking.setService(svc.getName());
+                    // If price wasn't provided, set it from the service
+                    if (booking.getPrice() == null && svc.getPrice() != null) {
+                        booking.setPrice(svc.getPrice());
+                    }
+                }
+            } catch (Exception e) {
+                // swallow - if lookup fails we'll keep the original value
             }
         }
 

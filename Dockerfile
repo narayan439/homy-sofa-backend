@@ -1,25 +1,28 @@
-# ===============================
-# Build stage
-# ===============================
-FROM maven:3.9.6-eclipse-temurin-17 AS builder
+# =========================
+# BUILD STAGE
+# =========================
+FROM maven:3.9.6-eclipse-temurin-17 AS build
 
-WORKDIR /app
+# Set workdir to backend folder
+WORKDIR /app/Homy-backend
 
-COPY pom.xml .
-RUN mvn dependency:go-offline
+# Copy everything into container
+COPY . /app
 
-COPY src src
+# Build Spring Boot application
 RUN mvn clean package -DskipTests
 
-# ===============================
-# Runtime stage
-# ===============================
+
+# =========================
+# RUNTIME STAGE
+# =========================
 FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
-COPY --from=builder /app/target/*.jar app.jar
 
-ENV JAVA_OPTS="-Xms256m -Xmx512m"
+# Copy built jar from build stage
+COPY --from=build /app/Homy-backend/target/*.jar app.jar
+
 EXPOSE 8080
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8080} -jar app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
