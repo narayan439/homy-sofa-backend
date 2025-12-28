@@ -73,6 +73,9 @@ public class EmailService {
             mailSender.send(message);
             logger.info("Booking confirmation email sent to: {}", booking.getEmail());
         } catch (MessagingException ex) {
+            logger.error("Failed to build booking confirmation email for {}: {}", booking.getEmail(), ex.getMessage(), ex);
+        } catch (Exception ex) {
+            // Catch MailException and other runtime exceptions from JavaMailSender.send
             logger.error("Failed to send booking confirmation email to {}: {}", booking.getEmail(), ex.getMessage(), ex);
         }
     }
