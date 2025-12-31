@@ -79,7 +79,8 @@ public class SecurityConfig {
         // Allow the dev frontend origin and the production frontend origin on Railway.
         configuration.setAllowedOriginPatterns(List.of(
             "http://localhost:4200",
-            "https://homy-sofa-frontend-production.up.railway.app"
+            "https://homy-sofa-frontend-production.up.railway.app",
+            "homy-sofa.netlify.app"
         ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*", "Authorization", "Content-Type"));
