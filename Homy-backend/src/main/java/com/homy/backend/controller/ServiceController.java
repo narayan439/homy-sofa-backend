@@ -89,9 +89,16 @@ public class ServiceController {
         if (service.getDescription() != null)
             existing.setDescription(service.getDescription());
 
-        if (service.getPrice() != null)
-            existing.setPrice(service.getPrice());
+        // Handle price: set to null if 0 or not provided
+        if (service.getPrice() != null) {
+            if (service.getPrice() > 0) {
+                existing.setPrice(service.getPrice());
+            } else {
+                existing.setPrice(null);
+            }
+        }
 
+        // Handle isActive toggle
         if (service.getIsActive() != null)
             existing.setIsActive(service.getIsActive());
 

@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.time.LocalDateTime;
 
 @Entity
@@ -74,4 +75,17 @@ public class Booking {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
+
+    // Transient fields to receive/store address information from client
+    @Transient
+    private String address;
+
+    @Transient
+    private String latLong; // format: "lat,lon"
+
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
+
+    public String getLatLong() { return latLong; }
+    public void setLatLong(String latLong) { this.latLong = latLong; }
 }

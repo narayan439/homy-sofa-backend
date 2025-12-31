@@ -84,7 +84,7 @@ public class EmailService {
      * Build HTML email template for booking confirmation
      */
     private String buildConfirmationEmailHtml(Booking booking) {
-        String bookingDate = formatDate(booking.getDate());
+        String bookingDate = booking.getDate() != null ? booking.getDate() : "Not specified";
         String confirmationDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm a"));
         // Resolve service display name: if booking.service looks like an ID, try to fetch the real name
         String serviceDisplay = booking.getService() != null ? booking.getService() : "Not specified";
@@ -184,16 +184,208 @@ public class EmailService {
     }
 
     /**
-     * Format date string for display
+     * Send booking status change email
      */
-    private String formatDate(String dateStr) {
-        if (dateStr == null || dateStr.isEmpty()) {
-            return "Not specified";
+    public void sendStatusChangeEmail(Booking booking, String oldStatus, String newStatus) {
+        if (booking.getEmail() == null || booking.getEmail().isEmpty()) {
+            logger.warn("Booking has no email, skipping status change email for booking id={}", booking.getId());
+            return;
         }
+
         try {
-            return dateStr;
-        } catch (Exception e) {
-            return dateStr;
+            logger.info("Preparing status change email for {} <{}> (status: {} -> {})", 
+                booking.getName(), booking.getEmail(), oldStatus, newStatus);
+            
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "utf-8");
+            
+            helper.setFrom(fromEmail);
+            helper.setTo(booking.getEmail());
+            helper.setSubject(getStatusChangeEmailSubject(newStatus));
+            helper.setText(buildStatusChangeEmailContent(booking, oldStatus, newStatus), true);
+            
+            mailSender.send(mimeMessage);
+            logger.info("Status change email sent successfully to {} for booking id={}", 
+                booking.getEmail(), booking.getId());
+        } catch (MessagingException e) {
+            logger.error("Failed to send status change email for booking id={}", booking.getId(), e);
+            throw new RuntimeException("Failed to send status change email", e);
+        }
+    }
+
+    /**
+     * Get email subject based on new status
+     */
+    private String getStatusChangeEmailSubject(String status) {
+        switch (status.toUpperCase()) {
+            case "APPROVED":
+                return "Your Booking is Approved - " + appName;
+            case "COMPLETED":
+                return "Your Booking is Completed - " + appName;
+            case "CANCELLED":
+                return "Your Booking has been Cancelled - " + appName;
+            default:
+                return "Booking Status Update - " + appName;
+        }
+    }
+
+    /**
+     * Build HTML content for status change email
+     */
+    private String buildStatusChangeEmailContent(Booking booking, String oldStatus, String newStatus) {
+        String statusMessage = getStatusMessage(newStatus);
+        String headerColor = getStatusColor(newStatus);
+        String icon = getStatusIcon(newStatus);
+        String serviceName = booking.getService() != null ? booking.getService() : "Your Service";
+        
+        return String.format(
+            "<!DOCTYPE html>\n" +
+            "<html lang=\"en\">\n" +
+            "<head>\n" +
+            "    <meta charset=\"UTF-8\">\n" +
+            "    <style>\n" +
+            "        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n" +
+            "        .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; }\n" +
+            "        .header { background-color: %s; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }\n" +
+            "        .content { background-color: white; padding: 30px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }\n" +
+            "        .status-box { background-color: %s; padding: 15px; margin: 20px 0; border-radius: 5px; text-align: center; border-left: 4px solid %s; }\n" +
+            "        .status-icon { font-size: 32px; margin-bottom: 10px; }\n" +
+            "        .status-text { font-size: 20px; font-weight: bold; color: %s; }\n" +
+            "        .details { margin: 20px 0; }\n" +
+            "        .detail-row { margin: 10px 0; padding: 10px; background-color: #f5f5f5; border-left: 4px solid %s; }\n" +
+            "        .detail-label { font-weight: bold; color: %s; }\n" +
+            "        .reference-box { background-color: #e8f5e9; padding: 15px; margin: 20px 0; border-radius: 5px; text-align: center; }\n" +
+            "        .reference-code { font-size: 18px; font-weight: bold; color: #2E7D32; font-family: monospace; }\n" +
+            "        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #666; }\n" +
+            "    </style>\n" +
+            "</head>\n" +
+            "<body>\n" +
+            "    <div class=\"container\">\n" +
+            "        <div class=\"header\">\n" +
+            "            <h1>%s Booking Status Update</h1>\n" +
+            "        </div>\n" +
+            "        <div class=\"content\">\n" +
+            "            <p>Dear <strong>%s</strong>,</p>\n" +
+            "\n" +
+            "            <div class=\"status-box\">\n" +
+            "                <div class=\"status-icon\">%s</div>\n" +
+            "                <div class=\"status-text\">%s</div>\n" +
+            "            </div>\n" +
+            "\n" +
+            "            <p>Your booking has been <strong>%s</strong>.</p>\n" +
+            "\n" +
+            "            <div class=\"reference-box\">\n" +
+            "                <p style=\"margin: 0 0 10px 0; color: #666;\">Your Booking Reference:</p>\n" +
+            "                <div class=\"reference-code\">%s</div>\n" +
+            "            </div>\n" +
+            "\n" +
+            "            <h3>Booking Details:</h3>\n" +
+            "            <div class=\"details\">\n" +
+            "                <div class=\"detail-row\">\n" +
+            "                    <span class=\"detail-label\">Service:</span> %s\n" +
+            "                </div>\n" +
+            "                <div class=\"detail-row\">\n" +
+            "                    <span class=\"detail-label\">Current Status:</span> <strong>%s</strong>\n" +
+            "                </div>\n" +
+            "                <div class=\"detail-row\">\n" +
+            "                    <span class=\"detail-label\">Booking Date:</span> %s\n" +
+            "                </div>\n" +
+            "            </div>\n" +
+            "\n" +
+            "            <p>If you have any questions regarding this status change, please feel free to contact us.</p>\n" +
+            "\n" +
+            "            <div class=\"footer\">\n" +
+            "                <p>© %d %s. All rights reserved.</p>\n" +
+            "                <p>Update sent on: %s</p>\n" +
+            "            </div>\n" +
+            "        </div>\n" +
+            "    </div>\n" +
+            "</body>\n" +
+            "</html>",
+            headerColor,
+            getStatusBgColor(newStatus),
+            headerColor,
+            headerColor,
+            headerColor,
+            headerColor,
+            icon,
+            icon,
+            statusMessage,
+            booking.getName(),
+            icon,
+            statusMessage,
+            newStatus.toLowerCase(),
+            booking.getReference() != null ? booking.getReference() : "ID-" + booking.getId(),
+            serviceName,
+            newStatus,
+            booking.getDate() != null ? booking.getDate() : "Not specified",
+            LocalDateTime.now().getYear(),
+            appName,
+            LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm:ss"))
+        );
+    }
+
+    /**
+     * Get status message based on status
+     */
+    private String getStatusMessage(String status) {
+        switch (status.toUpperCase()) {
+            case "APPROVED":
+                return "Your booking has been approved!";
+            case "COMPLETED":
+                return "Your booking is complete!";
+            case "CANCELLED":
+                return "Your booking has been cancelled.";
+            default:
+                return "Your booking status has been updated.";
+        }
+    }
+
+    /**
+     * Get status color based on status
+     */
+    private String getStatusColor(String status) {
+        switch (status.toUpperCase()) {
+            case "APPROVED":
+                return "#4CAF50";  // Green
+            case "COMPLETED":
+                return "#2196F3";  // Blue
+            case "CANCELLED":
+                return "#f44336";  // Red
+            default:
+                return "#FF9800";  // Orange
+        }
+    }
+
+    /**
+     * Get status background color
+     */
+    private String getStatusBgColor(String status) {
+        switch (status.toUpperCase()) {
+            case "APPROVED":
+                return "#E8F5E9";  // Light green
+            case "COMPLETED":
+                return "#E3F2FD";  // Light blue
+            case "CANCELLED":
+                return "#FFEBEE";  // Light red
+            default:
+                return "#FFF3E0";  // Light orange
+        }
+    }
+
+    /**
+     * Get status icon
+     */
+    private String getStatusIcon(String status) {
+        switch (status.toUpperCase()) {
+            case "APPROVED":
+                return "✓";  // Checkmark
+            case "COMPLETED":
+                return "✓✓";  // Double checkmark
+            case "CANCELLED":
+                return "✗";  // X mark
+            default:
+                return "⚡";  // Lightning
         }
     }
 }

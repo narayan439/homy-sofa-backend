@@ -35,6 +35,9 @@ public class BookingController {
     @Autowired
     private EmailService emailService;
 
+    @Autowired
+    private com.homy.backend.repository.AddressRepository addressRepository;
+
     @GetMapping
     public List<Booking> getAll() {
         List<Booking> all = bookingRepository.findAll();
@@ -46,6 +49,17 @@ public class BookingController {
                     if (c.getPhone() != null) b.setPhone(c.getPhone());
                     if (c.getEmail() != null) b.setEmail(c.getEmail());
                 });
+            }
+            // Attach address info if present
+            try {
+                if (b.getId() != null) {
+                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                        b.setAddress(a.getAddressText());
+                        b.setLatLong(a.getLatLong());
+                    });
+                }
+            } catch (Exception e) {
+                // ignore address lookup failures
             }
         }
         return all;
@@ -61,6 +75,15 @@ public class BookingController {
                             if (c.getPhone() != null) b.setPhone(c.getPhone());
                             if (c.getEmail() != null) b.setEmail(c.getEmail());
                         });
+                    }
+                    // Attach address info if present
+                    try {
+                        addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                            b.setAddress(a.getAddressText());
+                            b.setLatLong(a.getLatLong());
+                        });
+                    } catch (Exception e) {
+                        // ignore
                     }
                     return ResponseEntity.ok(b);
                 })
@@ -98,8 +121,10 @@ public class BookingController {
         }
 
         // Prevent customer from booking the same service multiple times while they have an active booking
-        if (bookingRepository.hasActiveBookingForService(customer.getId(), booking.getService())) {
-            return ResponseEntity.status(409).build(); // Conflict: duplicate active booking for same service
+        Booking existingBooking = bookingRepository.findActiveBookingForService(customer.getId(), booking.getService());
+        if (existingBooking != null) {
+            // Return 409 with the existing booking reference
+            return ResponseEntity.status(409).body(existingBooking);
         }
 
         // Save booking first (so DB persists any fields), then obtain DB id for reference
@@ -116,12 +141,33 @@ public class BookingController {
 
         // Send confirmation email asynchronously (simple fire-and-forget)
         try { emailService.sendBookingConfirmation(saved); } catch (Exception e) {}
+
+        // Persist address if provided (store lat,long as comma separated and full address text)
+        try {
+            if ((booking.getAddress() != null && !booking.getAddress().isBlank()) ||
+                (booking.getLatLong() != null && !booking.getLatLong().isBlank())) {
+
+                com.homy.backend.model.Address addr = new com.homy.backend.model.Address();
+                addr.setBookingId(saved.getId());
+                addr.setCustomerId(saved.getCustomerId());
+                addr.setAddressText(booking.getAddress());
+                addr.setLatLong(booking.getLatLong());
+                addressRepository.save(addr);
+            }
+        } catch (Exception ex) {
+            // Do not fail booking creation if address persistence fails; log and continue
+            ex.printStackTrace();
+        }
+
         return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Booking> update(@PathVariable Long id, @RequestBody Booking booking) {
         return bookingRepository.findById(id).map(existing -> {
+            String oldStatus = existing.getStatus();
+            String newStatus = booking.getStatus();
+            
             // Only update fields provided in the request (avoid overwriting with nulls)
             if (booking.getStatus() != null) existing.setStatus(booking.getStatus());
             if (booking.getMessage() != null) existing.setMessage(booking.getMessage());
@@ -131,8 +177,20 @@ public class BookingController {
             if (booking.getPhone() != null) existing.setPhone(booking.getPhone());
             if (booking.getEmail() != null) existing.setEmail(booking.getEmail());
             if (booking.getTotalAmount() != null) existing.setTotalAmount(booking.getTotalAmount());
-            bookingRepository.save(existing);
-            return ResponseEntity.ok(existing);
+            
+            Booking updated = bookingRepository.save(existing);
+            
+            // Send status change email if status has changed
+            if (oldStatus != null && newStatus != null && !oldStatus.equals(newStatus)) {
+                try {
+                    emailService.sendStatusChangeEmail(updated, oldStatus, newStatus);
+                } catch (Exception e) {
+                    // Log but don't fail the update if email fails
+                    e.printStackTrace();
+                }
+            }
+            
+            return ResponseEntity.ok(updated);
         }).orElse(ResponseEntity.notFound().build());
     }
 
