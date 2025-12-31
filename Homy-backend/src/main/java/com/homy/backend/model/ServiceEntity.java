@@ -1,6 +1,7 @@
 package com.homy.backend.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -30,6 +31,10 @@ public class ServiceEntity {
     @Column(name = "image_path", length = 1024)
     private String imagePath;
 
+    // Transient field to expose imageUrl to JSON without requiring DB migration.
+    @Transient
+    private String imageUrl;
+
     public ServiceEntity() {}
 
     public String getId() { return id; }
@@ -53,4 +58,17 @@ public class ServiceEntity {
     // ✅ UPDATED getter & setter
     public String getImagePath() { return imagePath; }
     public void setImagePath(String imagePath) { this.imagePath = imagePath; }
+
+    // New getters/setters. Keep backward compatibility: prefer imageUrl when available.
+    public String getImageUrl() {
+        return (imageUrl != null && !imageUrl.isBlank()) ? imageUrl : imagePath;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+        // Mirror to imagePath for older code that may still read imagePath
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            this.imagePath = imageUrl;
+        }
+    }
 }

@@ -7,6 +7,9 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
@@ -17,6 +20,8 @@ import com.homy.backend.model.ServiceEntity;
 
 @Service
 public class EmailService {
+
+    private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
 
     @Autowired
     private JavaMailSender mailSender;
@@ -35,11 +40,26 @@ public class EmailService {
      */
     public void sendBookingConfirmation(Booking booking) {
         if (booking.getEmail() == null || booking.getEmail().isEmpty()) {
-            System.err.println("Booking has no email, skipping confirmation");
+            logger.warn("Booking has no email, skipping confirmation for booking id={}", booking.getId());
             return;
         }
 
         try {
+            logger.info("Preparing booking confirmation email for {} <{}>", booking.getName(), booking.getEmail());
+            // Log JavaMailSender implementation and connection properties (no passwords)
+            if (mailSender != null) {
+                logger.info("JavaMailSender implementation: {}", mailSender.getClass().getName());
+                if (mailSender instanceof JavaMailSenderImpl) {
+                    JavaMailSenderImpl impl = (JavaMailSenderImpl) mailSender;
+                    try {
+                        logger.info("SMTP host={} port={} username={} protocol={}", impl.getHost(), impl.getPort(), impl.getUsername(), impl.getProtocol());
+                    } catch (Exception e) {
+                        logger.debug("Failed to read JavaMailSenderImpl properties", e);
+                    }
+                }
+            } else {
+                logger.warn("mailSender is null");
+            }
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
@@ -51,10 +71,12 @@ public class EmailService {
             helper.setText(htmlBody, true); // true = HTML content
 
             mailSender.send(message);
-            System.out.println("Booking confirmation email sent to: " + booking.getEmail());
+            logger.info("Booking confirmation email sent to: {}", booking.getEmail());
         } catch (MessagingException ex) {
-            System.err.println("Failed to send booking confirmation email: " + ex.getMessage());
-            ex.printStackTrace();
+            logger.error("Failed to build booking confirmation email for {}: {}", booking.getEmail(), ex.getMessage(), ex);
+        } catch (Exception ex) {
+            // Catch MailException and other runtime exceptions from JavaMailSender.send
+            logger.error("Failed to send booking confirmation email to {}: {}", booking.getEmail(), ex.getMessage(), ex);
         }
     }
 

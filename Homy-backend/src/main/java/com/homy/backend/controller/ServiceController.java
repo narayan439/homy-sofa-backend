@@ -61,6 +61,11 @@ public class ServiceController {
             service.setCreatedAt(LocalDateTime.now());
         }
 
+        // If frontend provided imageUrl, ensure entity stores it (mirrors to image_path too)
+        if (service.getImageUrl() != null && !service.getImageUrl().isBlank()) {
+            service.setImageUrl(service.getImageUrl());
+        }
+
         ServiceEntity saved = serviceRepository.save(service);
         return ResponseEntity.ok(saved);
     }
@@ -90,8 +95,12 @@ public class ServiceController {
         if (service.getIsActive() != null)
             existing.setIsActive(service.getIsActive());
 
-        if (service.getImagePath() != null)
+        // Accept either imageUrl or legacy imagePath from client
+        if (service.getImageUrl() != null && !service.getImageUrl().isBlank()) {
+            existing.setImageUrl(service.getImageUrl());
+        } else if (service.getImagePath() != null && !service.getImagePath().isBlank()) {
             existing.setImagePath(service.getImagePath());
+        }
 
         ServiceEntity updated = serviceRepository.save(existing);
         return ResponseEntity.ok(updated);
