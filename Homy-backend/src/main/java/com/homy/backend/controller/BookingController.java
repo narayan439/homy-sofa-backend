@@ -95,10 +95,36 @@ public class BookingController {
     public ResponseEntity<Booking> create(@RequestBody Booking booking) {
         if (booking.getStatus() == null) booking.setStatus("PENDING");
 
-        // Find or create customer by phone (unique identifier)
+        // Find or create customer by phone OR email (prefer phone when available)
         String phone = booking.getPhone();
-        Customer customer = customerRepository.findByPhone(phone)
-            .orElseGet(() -> customerRepository.save(new Customer(booking.getName(), phone, booking.getEmail())));
+        String email = booking.getEmail();
+
+        Customer customer = null;
+        if (phone != null && !phone.isBlank()) {
+            customer = customerRepository.findByPhone(phone).orElse(null);
+        }
+        if (customer == null && email != null && !email.isBlank()) {
+            customer = customerRepository.findByEmail(email).orElse(null);
+        }
+
+        if (customer == null) {
+            // No existing customer found - create a new one
+            customer = customerRepository.save(new Customer(booking.getName(), phone, email));
+        } else {
+            // Existing customer found - ensure we populate any missing contact info
+            boolean updated = false;
+            if ((customer.getEmail() == null || customer.getEmail().isBlank()) && email != null && !email.isBlank()) {
+                customer.setEmail(email);
+                updated = true;
+            }
+            if ((customer.getPhone() == null || customer.getPhone().isBlank()) && phone != null && !phone.isBlank()) {
+                customer.setPhone(phone);
+                updated = true;
+            }
+            if (updated) {
+                customerRepository.save(customer);
+            }
+        }
 
         // Link booking to customer
         booking.setCustomerId(customer.getId());
