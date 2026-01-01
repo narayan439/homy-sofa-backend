@@ -134,8 +134,8 @@ public class BookingController {
         // Format: HOMY{YEAR}{seq padded to 6 digits} e.g. HOMY202500001
         int year = LocalDateTime.now().getYear();
         long idVal = saved.getId() != null ? saved.getId() : 0L;
-        String seqPadded = String.format("%06d", idVal);
-        String reference = "HOMY" + year + seqPadded;
+        String seq = String.valueOf(idVal);
+        String reference = "HOMY" + year + seq;
         saved.setReference(reference);
         bookingRepository.save(saved);
 
