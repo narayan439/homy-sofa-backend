@@ -1,0 +1,66 @@
+package com.homy.backend.controller;
+
+import com.homy.backend.model.Booking;
+import com.homy.backend.repository.BookingRepository;
+import com.homy.backend.service.EmailService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/bookings")
+public class BookingController {
+
+    @Autowired
+    private BookingRepository bookingRepository;
+
+    @Autowired
+    private EmailService emailService;
+
+    @GetMapping
+    public List<Booking> getAll() {
+        return bookingRepository.findAll();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Booking> getById(@PathVariable String id) {
+        return bookingRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
+    public ResponseEntity<Booking> create(@RequestBody Booking booking) {
+        if (booking.getStatus() == null) booking.setStatus("PENDING");
+        Booking saved = bookingRepository.save(booking);
+        // Send confirmation email asynchronously (simple fire-and-forget)
+        try { emailService.sendBookingConfirmation(saved); } catch (Exception e) {}
+        return ResponseEntity.ok(saved);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Booking> update(@PathVariable String id, @RequestBody Booking booking) {
+        return bookingRepository.findById(id).map(existing -> {
+            existing.setStatus(booking.getStatus());
+            existing.setMessage(booking.getMessage());
+            existing.setDate(booking.getDate());
+            existing.setService(booking.getService());
+            existing.setName(booking.getName());
+            existing.setPhone(booking.getPhone());
+            existing.setEmail(booking.getEmail());
+            existing.setTotalAmount(booking.getTotalAmount());
+            bookingRepository.save(existing);
+            return ResponseEntity.ok(existing);
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> delete(@PathVariable String id) {
+        return bookingRepository.findById(id).map(b -> {
+            bookingRepository.delete(b);
+            return ResponseEntity.ok().build();
+        }).orElse(ResponseEntity.notFound().build());
+    }
+}

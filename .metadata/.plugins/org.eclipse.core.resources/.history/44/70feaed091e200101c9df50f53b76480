@@ -1,0 +1,26 @@
+spring.application.name=Homy-backend
+
+# Datasource (MySQL)
+spring.datasource.url=jdbc:mysql://localhost:3306/homy_db?useSSL=false&serverTimezone=UTC
+spring.datasource.username=root
+spring.datasource.password=changeme
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+
+# JPA
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+# JWT
+homy.jwt.secret=change_this_secret_to_a_strong_value
+homy.jwt.expiration=86400000
+
+# Mail (SMTP) - replace with real SMTP settings
+spring.mail.host=smtp.example.com
+spring.mail.port=587
+spring.mail.username=your-smtp-user
+spring.mail.password=your-smtp-password
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+
+# Server port
+server.port=8080

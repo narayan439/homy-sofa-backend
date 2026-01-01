@@ -1,0 +1,53 @@
+package com.homy.backend.controller;
+
+import com.homy.backend.dto.AuthRequest;
+import com.homy.backend.dto.AuthResponse;
+import com.homy.backend.model.AdminUser;
+import com.homy.backend.repository.AdminRepository;
+import com.homy.backend.security.JwtUtil;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+
+    @Autowired
+    private AdminRepository adminRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody AuthRequest req) {
+        return adminRepository.findByEmail(req.getEmail())
+                .map(admin -> {
+                    if (passwordEncoder.matches(req.getPassword(), admin.getPassword())) {
+                        String token = jwtUtil.generateToken(admin.getId(), admin.getEmail());
+                        AuthResponse res = new AuthResponse(token, admin.getId(), admin.getEmail(), admin.getName());
+                        return ResponseEntity.ok(res);
+                    }
+                    return ResponseEntity.status(401).build();
+                }).orElse(ResponseEntity.status(401).build());
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@RequestBody AuthRequest req) {
+        if (adminRepository.findByEmail(req.getEmail()).isPresent()) {
+            return ResponseEntity.badRequest().body("Email already exists");
+        }
+        AdminUser admin = new AdminUser();
+        admin.setEmail(req.getEmail());
+        admin.setName("Administrator");
+        admin.setPassword(passwordEncoder.encode(req.getPassword()));
+        adminRepository.save(admin);
+        String token = jwtUtil.generateToken(admin.getId(), admin.getEmail());
+        AuthResponse res = new AuthResponse(token, admin.getId(), admin.getEmail(), admin.getName());
+        return ResponseEntity.ok(res);
+    }
+}

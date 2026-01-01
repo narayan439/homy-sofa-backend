@@ -1,0 +1,60 @@
+package com.homy.backend.model;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "bookings")
+public class Booking {
+
+    @Id
+    private String id = UUID.randomUUID().toString();
+
+    private String name;
+    private String phone;
+    private String email;
+    private String service;
+
+    @Column(length = 256)
+    private String message;
+
+    private String date; // keep as string to match frontend format
+
+    private String status; // PENDING / APPROVED / COMPLETED / CANCELLED
+
+    private Double totalAmount;
+    private String customerId;
+
+    private Instant createdAt = Instant.now();
+
+    public Booking() {}
+
+    // Getters and setters
+
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getPhone() { return phone; }
+    public void setPhone(String phone) { this.phone = phone; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public String getService() { return service; }
+    public void setService(String service) { this.service = service; }
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+    public String getDate() { return date; }
+    public void setDate(String date) { this.date = date; }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+    public Double getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(Double totalAmount) { this.totalAmount = totalAmount; }
+    public String getCustomerId() { return customerId; }
+    public void setCustomerId(String customerId) { this.customerId = customerId; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+}
