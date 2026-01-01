@@ -163,11 +163,15 @@ public class BookingController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Booking> update(@PathVariable Long id, @RequestBody Booking booking) {
+    public ResponseEntity<Booking> update(
+            @PathVariable Long id,
+            @RequestBody Booking booking,
+            @RequestParam(name = "sendEmail", required = false) Boolean sendEmail
+    ) {
         return bookingRepository.findById(id).map(existing -> {
             String oldStatus = existing.getStatus();
             String newStatus = booking.getStatus();
-            
+
             // Only update fields provided in the request (avoid overwriting with nulls)
             if (booking.getStatus() != null) existing.setStatus(booking.getStatus());
             if (booking.getMessage() != null) existing.setMessage(booking.getMessage());
@@ -177,11 +181,22 @@ public class BookingController {
             if (booking.getPhone() != null) existing.setPhone(booking.getPhone());
             if (booking.getEmail() != null) existing.setEmail(booking.getEmail());
             if (booking.getTotalAmount() != null) existing.setTotalAmount(booking.getTotalAmount());
-            
+
             Booking updated = bookingRepository.save(existing);
-            
-            // Send status change email if status has changed
+
+            // Decide whether to send email: if sendEmail param provided, use it; otherwise
+            // only send emails for APPROVED/COMPLETED/CANCELLED transitions
+            boolean shouldSend = false;
             if (oldStatus != null && newStatus != null && !oldStatus.equals(newStatus)) {
+                if (sendEmail != null) {
+                    shouldSend = sendEmail.booleanValue();
+                } else {
+                    String next = newStatus.toUpperCase();
+                    shouldSend = next.equals("APPROVED") || next.equals("COMPLETED") || next.equals("CANCELLED");
+                }
+            }
+
+            if (shouldSend) {
                 try {
                     emailService.sendStatusChangeEmail(updated, oldStatus, newStatus);
                 } catch (Exception e) {
@@ -189,7 +204,7 @@ public class BookingController {
                     e.printStackTrace();
                 }
             }
-            
+
             return ResponseEntity.ok(updated);
         }).orElse(ResponseEntity.notFound().build());
     }
