@@ -25,12 +25,12 @@ public class DataInitializer implements CommandLineRunner {
         if (adminRepository.findByEmail(adminEmail).isEmpty()) {
             AdminUser admin = new AdminUser();
             admin.setEmail(adminEmail);
-            admin.setName("System Administrator");
+            admin.setName("Administrator");
             admin.setPassword(passwordEncoder.encode("123456"));
             adminRepository.save(admin);
             System.out.println("[DataInitializer] Created default admin: " + adminEmail + " / 123456");
         } else {
-            System.out.println("[DataInitializer] Default admin already exists: " + adminEmail);
+            System.out.println("[DataInitializer] admin already exists: " + adminEmail);
         }
     }
 }

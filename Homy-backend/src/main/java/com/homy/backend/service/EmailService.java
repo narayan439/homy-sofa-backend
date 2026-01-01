@@ -163,8 +163,8 @@ public class EmailService {
             "            <p>If you have any questions, please don't hesitate to contact us.</p>\n" +
             "\n" +
             "            <div class=\"footer\">\n" +
-            "                <p>© %d %s. All rights reserved.</p>\n" +
-            "                <p>Booking confirmed on: %s</p>\n" +
+            "                <p>© 2026 Homy Sofa. All rights reserved.</p>\n" +
+            // "                <p>Booking confirmed on: %s</p>\n" +
             "            </div>\n" +
             "        </div>\n" +
             "    </div>\n" +
@@ -177,7 +177,7 @@ public class EmailService {
             bookingDate,
             booking.getPhone() != null ? booking.getPhone() : "Not provided",
             booking.getEmail(),
-            LocalDateTime.now().getYear(),
+            String.valueOf(LocalDateTime.now().getYear()),
             appName,
             confirmationDate
         );
@@ -295,8 +295,8 @@ public class EmailService {
             "            <p>If you have any questions regarding this status change, please feel free to contact us.</p>\n" +
             "\n" +
             "            <div class=\"footer\">\n" +
-            "                <p>© %d %s. All rights reserved.</p>\n" +
-            "                <p>Update sent on: %s</p>\n" +
+            "                <p>© 2026 Homy Sofa. All rights reserved.</p>\n" +
+            // "                <p>Update sent on: %s</p>\n" +
             "            </div>\n" +
             "        </div>\n" +
             "    </div>\n" +
@@ -319,7 +319,7 @@ public class EmailService {
             serviceName,
             newStatus,
             booking.getDate() != null ? booking.getDate() : "Not specified",
-            LocalDateTime.now().getYear(),
+            String.valueOf(LocalDateTime.now().getYear()),
             appName,
             LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm:ss"))
         );
