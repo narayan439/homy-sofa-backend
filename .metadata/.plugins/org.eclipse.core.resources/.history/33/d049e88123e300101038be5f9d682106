@@ -1,0 +1,187 @@
+package com.homy.backend.controller;
+
+import com.homy.backend.model.ServiceEntity;
+import com.homy.backend.repository.ServiceRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+@RestController
+@RequestMapping("/api/services")
+@CrossOrigin(origins = "*")
+public class ServiceController {
+
+    @Autowired
+    private ServiceRepository serviceRepository;
+
+    @GetMapping
+    public List<ServiceEntity> getAll() {
+        return serviceRepository.findAll();
+    }
+
+    @GetMapping("/active")
+    public List<ServiceEntity> getActive() {
+        return serviceRepository.findByIsActiveTrue();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ServiceEntity> getById(@PathVariable String id) {
+        return serviceRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
+    public ResponseEntity<ServiceEntity> create(@RequestBody ServiceEntity s) {
+        if (s.getId() == null || s.getId().isBlank()) {
+            s.setId("svc-" + System.currentTimeMillis());
+        }
+        if (s.getCreatedAt() == null) s.setCreatedAt(LocalDateTime.now());
+        ServiceEntity saved = serviceRepository.save(s);
+        return ResponseEntity.ok(saved);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ServiceEntity> update(@PathVariable String id, @RequestBody ServiceEntity s) {
+        Optional<ServiceEntity> existing = serviceRepository.findById(id);
+        if (existing.isEmpty()) return ResponseEntity.notFound().build();
+        ServiceEntity e = existing.get();
+        if (s.getName() != null) e.setName(s.getName());
+        if (s.getDescription() != null) e.setDescription(s.getDescription());
+        if (s.getPrice() != null) e.setPrice(s.getPrice());
+        if (s.getIsActive() != null) e.setIsActive(s.getIsActive());
+        if (s.getImagePath() != null) e.setImagePath(s.getImagePath());
+        ServiceEntity saved = serviceRepository.save(e);
+        return ResponseEntity.ok(saved);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        return serviceRepository.findById(id).map(s -> {
+            serviceRepository.delete(s);
+            return ResponseEntity.ok().<Void>build();
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    // Image upload endpoint
+    @PostMapping("/upload-image")
+    public ResponseEntity<String> uploadImage(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("No file uploaded");
+        }
+        try {
+            String filename = System.currentTimeMillis() + "_" + StringUtils.cleanPath(file.getOriginalFilename());
+            String uploadDir = "src/main/resources/static/assets/backend/";
+            File dir = new File(uploadDir);
+            if (!dir.exists()) dir.mkdirs();
+            File dest = new File(uploadDir + filename);
+            file.transferTo(dest);
+            String publicPath = "/assets/backend/" + filename;
+            return ResponseEntity.ok(publicPath);
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload image");
+        }
+    }
+}
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpStatus;
+import org.springframework.util.StringUtils;
+import java.io.File;
+import java.io.IOException;
+    // Image upload endpoint
+    @PostMapping("/upload-image")
+    public ResponseEntity<String> uploadImage(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("No file uploaded");
+        }
+        try {
+            String filename = System.currentTimeMillis() + "_" + StringUtils.cleanPath(file.getOriginalFilename());
+            String uploadDir = "src/main/resources/static/assets/backend/";
+            File dir = new File(uploadDir);
+            if (!dir.exists()) dir.mkdirs();
+            File dest = new File(uploadDir + filename);
+            file.transferTo(dest);
+            String publicPath = "/assets/backend/" + filename;
+            return ResponseEntity.ok(publicPath);
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload image");
+        }
+    }
+package com.homy.backend.controller;
+
+import com.homy.backend.model.ServiceEntity;
+import com.homy.backend.repository.ServiceRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+@RestController
+@RequestMapping("/api/services")
+@CrossOrigin(origins = "*")
+public class ServiceController {
+
+    @Autowired
+    private ServiceRepository serviceRepository;
+
+    @GetMapping
+    public List<ServiceEntity> getAll() {
+        return serviceRepository.findAll();
+    }
+
+    @GetMapping("/active")
+    public List<ServiceEntity> getActive() {
+        return serviceRepository.findByIsActiveTrue();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ServiceEntity> getById(@PathVariable String id) {
+        return serviceRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
+    public ResponseEntity<ServiceEntity> create(@RequestBody ServiceEntity s) {
+        if (s.getId() == null || s.getId().isBlank()) {
+            s.setId("svc-" + System.currentTimeMillis());
+        }
+        if (s.getCreatedAt() == null) s.setCreatedAt(LocalDateTime.now());
+        ServiceEntity saved = serviceRepository.save(s);
+        return ResponseEntity.ok(saved);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ServiceEntity> update(@PathVariable String id, @RequestBody ServiceEntity s) {
+        Optional<ServiceEntity> existing = serviceRepository.findById(id);
+        if (existing.isEmpty()) return ResponseEntity.notFound().build();
+        ServiceEntity e = existing.get();
+        if (s.getName() != null) e.setName(s.getName());
+        if (s.getDescription() != null) e.setDescription(s.getDescription());
+        if (s.getPrice() != null) e.setPrice(s.getPrice());
+        if (s.getIsActive() != null) e.setIsActive(s.getIsActive());
+        ServiceEntity saved = serviceRepository.save(e);
+        return ResponseEntity.ok(saved);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        return serviceRepository.findById(id).map(s -> {
+            serviceRepository.delete(s);
+            return ResponseEntity.ok().<Void>build();
+        }).orElse(ResponseEntity.notFound().build());
+    }
+}
+
