@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import com.homy.backend.repository.ServiceRepository;
 import com.homy.backend.model.ServiceEntity;
+import org.springframework.scheduling.annotation.Async;
 
 @Service
 public class EmailService {
@@ -32,13 +33,43 @@ public class EmailService {
     @Value("${app.email.from:noreply@homysofa.com}")
     private String fromEmail;
 
+    @Value("${app.email.enabled:true}")
+    private boolean emailEnabled;
+
     @Value("${app.app.name:Homy Sofa}")
     private String appName;
 
     /**
-     * Send booking confirmation email with HTML template
+     * Validate email address format
      */
+    private boolean isValidEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            return false;
+        }
+        // Basic email validation
+        return email.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+    }
+
+    /**
+     * Get safe from email address with fallback
+     */
+    private String getSafeFromEmail() {
+        if (isValidEmail(fromEmail)) {
+            return fromEmail.trim();
+        }
+        // Fallback to hardcoded default
+        return "noreply@homysofa.com";
+    }
+
+    /**
+     * Send booking confirmation email asynchronously with HTML template
+     */
+    @Async  // Execute in background thread without blocking API response
     public void sendBookingConfirmation(Booking booking) {
+        if (!emailEnabled) {
+            logger.info("Email sending is disabled by configuration - skipping booking confirmation for booking id={}", booking.getId());
+            return;
+        }
         if (booking.getEmail() == null || booking.getEmail().isEmpty()) {
             logger.warn("Booking has no email, skipping confirmation for booking id={}", booking.getId());
             return;
@@ -64,7 +95,7 @@ public class EmailService {
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
             helper.setTo(booking.getEmail());
-            helper.setFrom(fromEmail);
+            helper.setFrom(getSafeFromEmail());  // Use safe from email with validation
             helper.setSubject("Booking Confirmation - " + appName);
 
             String htmlBody = buildConfirmationEmailHtml(booking);
@@ -77,6 +108,7 @@ public class EmailService {
         } catch (Exception ex) {
             // Catch MailException and other runtime exceptions from JavaMailSender.send
             logger.error("Failed to send booking confirmation email to {}: {}", booking.getEmail(), ex.getMessage(), ex);
+            // Do not rethrow - keep async failures contained
         }
     }
 
@@ -184,9 +216,14 @@ public class EmailService {
     }
 
     /**
-     * Send booking status change email
+     * Send booking status change email asynchronously
      */
+    @Async  // Execute in background thread without blocking API response
     public void sendStatusChangeEmail(Booking booking, String oldStatus, String newStatus) {
+        if (!emailEnabled) {
+            logger.info("Email sending is disabled by configuration - skipping status change email for booking id={}", booking.getId());
+            return;
+        }
         if (booking.getEmail() == null || booking.getEmail().isEmpty()) {
             logger.warn("Booking has no email, skipping status change email for booking id={}", booking.getId());
             return;
@@ -199,7 +236,7 @@ public class EmailService {
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "utf-8");
             
-            helper.setFrom(fromEmail);
+            helper.setFrom(getSafeFromEmail());  // Use safe from email with validation
             helper.setTo(booking.getEmail());
             helper.setSubject(getStatusChangeEmailSubject(newStatus));
             helper.setText(buildStatusChangeEmailContent(booking, oldStatus, newStatus), true);
@@ -208,8 +245,11 @@ public class EmailService {
             logger.info("Status change email sent successfully to {} for booking id={}", 
                 booking.getEmail(), booking.getId());
         } catch (MessagingException e) {
-            logger.error("Failed to send status change email for booking id={}", booking.getId(), e);
-            throw new RuntimeException("Failed to send status change email", e);
+            logger.error("Failed to build status change email for booking id={}: {}", booking.getId(), e.getMessage(), e);
+            // Do not rethrow - keep async failures contained
+        } catch (Exception e) {
+            logger.error("Failed to send status change email for booking id={}: {}", booking.getId(), e.getMessage(), e);
+            // Do not rethrow - keep async failures contained
         }
     }
 
