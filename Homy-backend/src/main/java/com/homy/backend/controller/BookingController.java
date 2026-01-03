@@ -41,7 +41,19 @@ public class BookingController {
     @GetMapping
     public List<Booking> getAll() {
         List<Booking> all = bookingRepository.findAll();
-        // Enrich bookings with customer details when available
+        // Fetch all addresses in a single query instead of per-booking
+        java.util.Map<Long, com.homy.backend.model.Address> addressMap = new java.util.HashMap<>();
+        try {
+            addressRepository.findAll().forEach(a -> {
+                if (a.getBookingId() != null) {
+                    addressMap.put(a.getBookingId(), a);
+                }
+            });
+        } catch (Exception e) {
+            // ignore address lookup failures
+        }
+
+        // Enrich bookings with customer details and addresses
         for (Booking b : all) {
             if (b.getCustomerId() != null) {
                 customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
@@ -50,16 +62,11 @@ public class BookingController {
                     if (c.getEmail() != null) b.setEmail(c.getEmail());
                 });
             }
-            // Attach address info if present
-            try {
-                if (b.getId() != null) {
-                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
-                        b.setAddress(a.getAddressText());
-                        b.setLatLong(a.getLatLong());
-                    });
-                }
-            } catch (Exception e) {
-                // ignore address lookup failures
+            // Attach address from cache instead of per-query
+            if (b.getId() != null && addressMap.containsKey(b.getId())) {
+                com.homy.backend.model.Address a = addressMap.get(b.getId());
+                b.setAddress(a.getAddressText());
+                b.setLatLong(a.getLatLong());
             }
         }
         return all;
@@ -88,6 +95,32 @@ public class BookingController {
                     return ResponseEntity.ok(b);
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/customer/{email}")
+    public List<Booking> getByCustomerEmail(@PathVariable String email) {
+        List<Booking> list = bookingRepository.findByEmail(email);
+        // Enrich bookings with any related customer/address info similar to getAll()
+        for (Booking b : list) {
+            if (b.getCustomerId() != null) {
+                customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
+                    if (c.getName() != null) b.setName(c.getName());
+                    if (c.getPhone() != null) b.setPhone(c.getPhone());
+                    if (c.getEmail() != null) b.setEmail(c.getEmail());
+                });
+            }
+            try {
+                if (b.getId() != null) {
+                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                        b.setAddress(a.getAddressText());
+                        b.setLatLong(a.getLatLong());
+                    });
+                }
+            } catch (Exception e) {
+                // ignore address lookup failures
+            }
+        }
+        return list;
     }
 
     @PostMapping
@@ -136,10 +169,8 @@ public class BookingController {
                 if (svc != null) {
                     // Always store the human-readable service name for persistence and emails
                     booking.setService(svc.getName());
-                    // If price wasn't provided, set it from the service
-                    if (booking.getPrice() == null && svc.getPrice() != null) {
-                        booking.setPrice(svc.getPrice());
-                    }
+                    // Do NOT auto-copy service price into booking.price here.
+                    // The booking price (final/completed amount) should be set by admin when inspection/completion occurs.
                 }
             } catch (Exception e) {
                 // swallow - if lookup fails we'll keep the original value
@@ -206,7 +237,22 @@ public class BookingController {
             if (booking.getName() != null) existing.setName(booking.getName());
             if (booking.getPhone() != null) existing.setPhone(booking.getPhone());
             if (booking.getEmail() != null) existing.setEmail(booking.getEmail());
-            if (booking.getTotalAmount() != null) existing.setTotalAmount(booking.getTotalAmount());
+            if (booking.getTotalAmount() != null) {
+                // When admin provides a completed/total amount, store it in both totalAmount and price fields
+                existing.setTotalAmount(booking.getTotalAmount());
+                existing.setPrice(booking.getTotalAmount());
+            }
+
+            // Store admin approval/status update fields
+            if (booking.getInstruments() != null) existing.setInstruments(booking.getInstruments());
+            if (booking.getExtraAmount() != null) existing.setExtraAmount(booking.getExtraAmount());
+            if (booking.getAdditionalService() != null) existing.setAdditionalService(booking.getAdditionalService());
+            if (booking.getCancelReason() != null) existing.setCancelReason(booking.getCancelReason());
+            if (booking.getAdminNotes() != null) existing.setAdminNotes(booking.getAdminNotes());
+            if (booking.getAdditionalServiceName() != null) existing.setAdditionalServiceName(booking.getAdditionalServiceName());
+            if (booking.getAdditionalServicePrice() != null) existing.setAdditionalServicePrice(booking.getAdditionalServicePrice());
+            if (booking.getAdditionalServicesJson() != null) existing.setAdditionalServicesJson(booking.getAdditionalServicesJson());
+            if (booking.getCompletionDate() != null) existing.setCompletionDate(booking.getCompletionDate());
 
             Booking updated = bookingRepository.save(existing);
 
