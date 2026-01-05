@@ -74,7 +74,8 @@ public class Booking {
     @Column(length = 256)
     private String additionalServiceName; // Name of additional service approved by admin
 
-   
+    @Column(name = "additional_service_price", columnDefinition = "DOUBLE")
+    private Double additionalServicePrice; // Price of additional service
 
     @Column(name = "additional_services_json", columnDefinition = "LONGTEXT")
     private String additionalServicesJson; // JSON array of multiple services: [{"id":"1","name":"Service","price":100}]
@@ -137,7 +138,9 @@ public class Booking {
     public String getAdditionalServiceName() { return additionalServiceName; }
     public void setAdditionalServiceName(String additionalServiceName) { this.additionalServiceName = additionalServiceName; }
 
-   
+    public Double getAdditionalServicePrice() { return additionalServicePrice; }
+    public void setAdditionalServicePrice(Double additionalServicePrice) { this.additionalServicePrice = additionalServicePrice; }
+
     public String getAdditionalServicesJson() { return additionalServicesJson; }
     public void setAdditionalServicesJson(String additionalServicesJson) { this.additionalServicesJson = additionalServicesJson; }
 
