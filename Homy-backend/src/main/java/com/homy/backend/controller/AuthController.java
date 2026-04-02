@@ -29,7 +29,7 @@ public class AuthController {
         return adminRepository.findByEmail(req.getEmail())
                 .map(admin -> {
                     if (passwordEncoder.matches(req.getPassword(), admin.getPassword())) {
-                        String token = jwtUtil.generateToken(admin.getId(), admin.getEmail());
+                        String token = jwtUtil.generateToken(admin.getId(), admin.getEmail(), "ADMIN");
                         AuthResponse res = new AuthResponse(token, admin.getId(), admin.getEmail(), admin.getName());
                         return ResponseEntity.ok(res);
                     }
@@ -47,7 +47,7 @@ public class AuthController {
         admin.setName("Administrator");
         admin.setPassword(passwordEncoder.encode(req.getPassword()));
         adminRepository.save(admin);
-        String token = jwtUtil.generateToken(admin.getId(), admin.getEmail());
+        String token = jwtUtil.generateToken(admin.getId(), admin.getEmail(), "ADMIN");
         AuthResponse res = new AuthResponse(token, admin.getId(), admin.getEmail(), admin.getName());
         return ResponseEntity.ok(res);
     }

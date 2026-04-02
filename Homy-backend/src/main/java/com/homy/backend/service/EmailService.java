@@ -254,12 +254,37 @@ public class EmailService {
     }
 
     /**
+     * Notify technician about new assignment
+     */
+    @Async
+    public void sendTechnicianAssignment(com.homy.backend.model.Technician tech, Booking booking) {
+        if (!emailEnabled) return;
+        if (tech == null || tech.getEmail() == null || tech.getEmail().isBlank()) return;
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setTo(tech.getEmail());
+            helper.setFrom(getSafeFromEmail());
+            helper.setSubject("New Job Assigned - " + appName);
+            String body = String.format("Hello %s,\n\nA new booking has been assigned to you: %s (Customer: %s, Phone: %s).\n\nPlease check the technician dashboard to accept or start the job.",
+                    tech.getName() != null ? tech.getName() : "Technician",
+                    booking.getReference() != null ? booking.getReference() : ("ID-" + booking.getId()),
+                    booking.getName(), booking.getPhone());
+            helper.setText(body, false);
+            mailSender.send(message);
+        } catch (Exception e) {
+            logger.error("Failed to notify technician {} about assignment: {}", tech.getEmail(), e.getMessage());
+        }
+    }
+
+    /**
      * Get email subject based on new status
      */
     private String getStatusChangeEmailSubject(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
-                return "Your Booking is Approved - " + appName;
+            case "ASSIGNED":
+                return "Your Booking is Assigned - " + appName;
             case "COMPLETED":
                 return "Your Booking is Completed - " + appName;
             case "CANCELLED":
@@ -371,7 +396,8 @@ public class EmailService {
     private String getStatusMessage(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
-                return "Your booking has been approved!";
+            case "ASSIGNED":
+                return "Your booking has been assigned!";
             case "COMPLETED":
                 return "Your booking is complete!";
             case "CANCELLED":
@@ -387,6 +413,7 @@ public class EmailService {
     private String getStatusColor(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
+            case "ASSIGNED":
                 return "#4CAF50";  // Green
             case "COMPLETED":
                 return "#2196F3";  // Blue
@@ -403,6 +430,7 @@ public class EmailService {
     private String getStatusBgColor(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
+            case "ASSIGNED":
                 return "#E8F5E9";  // Light green
             case "COMPLETED":
                 return "#E3F2FD";  // Light blue
@@ -419,6 +447,7 @@ public class EmailService {
     private String getStatusIcon(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
+            case "ASSIGNED":
                 return "✓";  // Checkmark
             case "COMPLETED":
                 return "✓✓";  // Double checkmark

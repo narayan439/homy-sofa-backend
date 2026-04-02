@@ -38,6 +38,9 @@ public class BookingController {
     @Autowired
     private com.homy.backend.repository.AddressRepository addressRepository;
 
+    @Autowired
+    private com.homy.backend.service.AssignmentService assignmentService;
+
     @GetMapping
     public List<Booking> getAll() {
         List<Booking> all = bookingRepository.findAll();
@@ -72,7 +75,42 @@ public class BookingController {
         return all;
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/search")
+    public ResponseEntity<?> searchBooking(
+            @RequestParam(value = "trackingId", required = false) String trackingId,
+            @RequestParam(value = "phone", required = false) String phone,
+            @RequestParam(value = "reference", required = false) String reference,
+            @RequestParam(value = "q", required = false) String q
+    ) {
+        // Require both reference/trackingId and phone for verification
+        String ref = trackingId != null && !trackingId.isBlank() ? trackingId : reference;
+        if (ref == null || ref.isBlank() || phone == null || phone.isBlank()) {
+            return ResponseEntity.badRequest().body("trackingId/reference and phone are required");
+        }
+
+        return bookingRepository.findByReferenceAndPhone(ref, phone)
+                .map(b -> {
+                    if (b.getCustomerId() != null) {
+                        customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
+                            if (c.getName() != null) b.setName(c.getName());
+                            if (c.getPhone() != null) b.setPhone(c.getPhone());
+                            if (c.getEmail() != null) b.setEmail(c.getEmail());
+                        });
+                    }
+                    try {
+                        addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                            b.setAddress(a.getAddressText());
+                            b.setLatLong(a.getLatLong());
+                        });
+                    } catch (Exception e) {
+                        // ignore address lookup failures
+                    }
+                    return ResponseEntity.ok(b);
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id:\\d+}")
     public ResponseEntity<Booking> getById(@PathVariable Long id) {
         return bookingRepository.findById(id)
                 .map(b -> {
@@ -216,6 +254,14 @@ public class BookingController {
             ex.printStackTrace();
         }
 
+        // Attempt automatic technician assignment (best-effort)
+        try {
+            assignmentService.assignTechnicianForBooking(saved);
+        } catch (Exception e) {
+            // Do not fail booking creation if assignment fails
+            e.printStackTrace();
+        }
+
         return ResponseEntity.ok(saved);
     }
 
@@ -253,6 +299,21 @@ public class BookingController {
             if (booking.getAdditionalServicePrice() != null) existing.setAdditionalServicePrice(booking.getAdditionalServicePrice());
             if (booking.getAdditionalServicesJson() != null) existing.setAdditionalServicesJson(booking.getAdditionalServicesJson());
             if (booking.getCompletionDate() != null) existing.setCompletionDate(booking.getCompletionDate());
+            if (booking.getTechnicianId() != null) existing.setTechnicianId(booking.getTechnicianId());
+            if (booking.getTechnicianStatus() != null) existing.setTechnicianStatus(booking.getTechnicianStatus());
+
+            // If admin changed booking.status to COMPLETED or CANCELLED, ensure technicianStatus follows
+            if (newStatus != null) {
+                String ns = newStatus.toUpperCase();
+                if (ns.equals("COMPLETED")) {
+                    existing.setTechnicianStatus("COMPLETED");
+                    if (existing.getCompletionDate() == null) {
+                        existing.setCompletionDate(LocalDateTime.now().toString());
+                    }
+                } else if (ns.equals("CANCELLED")) {
+                    existing.setTechnicianStatus("CANCELLED");
+                }
+            }
 
             Booking updated = bookingRepository.save(existing);
 
@@ -264,7 +325,8 @@ public class BookingController {
                     shouldSend = sendEmail.booleanValue();
                 } else {
                     String next = newStatus.toUpperCase();
-                    shouldSend = next.equals("APPROVED") || next.equals("COMPLETED") || next.equals("CANCELLED");
+                    // Send emails for ASSIGNED (previously APPROVED), COMPLETED or CANCELLED
+                    shouldSend = next.equals("APPROVED") || next.equals("ASSIGNED") || next.equals("COMPLETED") || next.equals("CANCELLED");
                 }
             }
 

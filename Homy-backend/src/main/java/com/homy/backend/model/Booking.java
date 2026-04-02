@@ -80,6 +80,15 @@ public class Booking {
     @Column(name = "additional_services_json", columnDefinition = "LONGTEXT")
     private String additionalServicesJson; // JSON array of multiple services: [{"id":"1","name":"Service","price":100}]
 
+    @Column(name = "technician_id")
+    private Long technicianId;
+
+    @Column(name = "technician_status")
+    private String technicianStatus; // ASSIGNED / IN_PROGRESS / COMPLETED
+
+    @Column(name = "technician_notes", length = 1000)
+    private String technicianNotes; // Notes provided by technician upon completion
+
     public Booking() {}
 
     // Getters and setters
@@ -143,6 +152,15 @@ public class Booking {
 
     public String getAdditionalServicesJson() { return additionalServicesJson; }
     public void setAdditionalServicesJson(String additionalServicesJson) { this.additionalServicesJson = additionalServicesJson; }
+
+    public Long getTechnicianId() { return technicianId; }
+    public void setTechnicianId(Long technicianId) { this.technicianId = technicianId; }
+
+    public String getTechnicianStatus() { return technicianStatus; }
+    public void setTechnicianStatus(String technicianStatus) { this.technicianStatus = technicianStatus; }
+
+    public String getTechnicianNotes() { return technicianNotes; }
+    public void setTechnicianNotes(String technicianNotes) { this.technicianNotes = technicianNotes; }
 
     // Transient fields to receive/store address information from client
     @Transient
