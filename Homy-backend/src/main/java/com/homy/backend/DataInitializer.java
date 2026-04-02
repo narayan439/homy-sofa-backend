@@ -21,7 +21,7 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        final String adminEmail = "admin@homysofa.com";
+        final String adminEmail = "admin@gmail.com";
         if (adminRepository.findByEmail(adminEmail).isEmpty()) {
             AdminUser admin = new AdminUser();
             admin.setEmail(adminEmail);
