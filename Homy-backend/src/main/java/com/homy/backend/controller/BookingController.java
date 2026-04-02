@@ -38,10 +38,25 @@ public class BookingController {
     @Autowired
     private com.homy.backend.repository.AddressRepository addressRepository;
 
+    @Autowired
+    private com.homy.backend.service.AssignmentService assignmentService;
+
     @GetMapping
     public List<Booking> getAll() {
         List<Booking> all = bookingRepository.findAll();
-        // Enrich bookings with customer details when available
+        // Fetch all addresses in a single query instead of per-booking
+        java.util.Map<Long, com.homy.backend.model.Address> addressMap = new java.util.HashMap<>();
+        try {
+            addressRepository.findAll().forEach(a -> {
+                if (a.getBookingId() != null) {
+                    addressMap.put(a.getBookingId(), a);
+                }
+            });
+        } catch (Exception e) {
+            // ignore address lookup failures
+        }
+
+        // Enrich bookings with customer details and addresses
         for (Booking b : all) {
             if (b.getCustomerId() != null) {
                 customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
@@ -50,22 +65,52 @@ public class BookingController {
                     if (c.getEmail() != null) b.setEmail(c.getEmail());
                 });
             }
-            // Attach address info if present
-            try {
-                if (b.getId() != null) {
-                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
-                        b.setAddress(a.getAddressText());
-                        b.setLatLong(a.getLatLong());
-                    });
-                }
-            } catch (Exception e) {
-                // ignore address lookup failures
+            // Attach address from cache instead of per-query
+            if (b.getId() != null && addressMap.containsKey(b.getId())) {
+                com.homy.backend.model.Address a = addressMap.get(b.getId());
+                b.setAddress(a.getAddressText());
+                b.setLatLong(a.getLatLong());
             }
         }
         return all;
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/search")
+    public ResponseEntity<?> searchBooking(
+            @RequestParam(value = "trackingId", required = false) String trackingId,
+            @RequestParam(value = "phone", required = false) String phone,
+            @RequestParam(value = "reference", required = false) String reference,
+            @RequestParam(value = "q", required = false) String q
+    ) {
+        // Require both reference/trackingId and phone for verification
+        String ref = trackingId != null && !trackingId.isBlank() ? trackingId : reference;
+        if (ref == null || ref.isBlank() || phone == null || phone.isBlank()) {
+            return ResponseEntity.badRequest().body("trackingId/reference and phone are required");
+        }
+
+        return bookingRepository.findByReferenceAndPhone(ref, phone)
+                .map(b -> {
+                    if (b.getCustomerId() != null) {
+                        customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
+                            if (c.getName() != null) b.setName(c.getName());
+                            if (c.getPhone() != null) b.setPhone(c.getPhone());
+                            if (c.getEmail() != null) b.setEmail(c.getEmail());
+                        });
+                    }
+                    try {
+                        addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                            b.setAddress(a.getAddressText());
+                            b.setLatLong(a.getLatLong());
+                        });
+                    } catch (Exception e) {
+                        // ignore address lookup failures
+                    }
+                    return ResponseEntity.ok(b);
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id:\\d+}")
     public ResponseEntity<Booking> getById(@PathVariable Long id) {
         return bookingRepository.findById(id)
                 .map(b -> {
@@ -90,15 +135,67 @@ public class BookingController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/customer/{email}")
+    public List<Booking> getByCustomerEmail(@PathVariable String email) {
+        List<Booking> list = bookingRepository.findByEmail(email);
+        // Enrich bookings with any related customer/address info similar to getAll()
+        for (Booking b : list) {
+            if (b.getCustomerId() != null) {
+                customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
+                    if (c.getName() != null) b.setName(c.getName());
+                    if (c.getPhone() != null) b.setPhone(c.getPhone());
+                    if (c.getEmail() != null) b.setEmail(c.getEmail());
+                });
+            }
+            try {
+                if (b.getId() != null) {
+                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                        b.setAddress(a.getAddressText());
+                        b.setLatLong(a.getLatLong());
+                    });
+                }
+            } catch (Exception e) {
+                // ignore address lookup failures
+            }
+        }
+        return list;
+    }
+
     @PostMapping
     @Transactional
     public ResponseEntity<Booking> create(@RequestBody Booking booking) {
         if (booking.getStatus() == null) booking.setStatus("PENDING");
 
-        // Find or create customer by phone (unique identifier)
+        // Find or create customer by phone OR email (prefer phone when available)
         String phone = booking.getPhone();
-        Customer customer = customerRepository.findByPhone(phone)
-            .orElseGet(() -> customerRepository.save(new Customer(booking.getName(), phone, booking.getEmail())));
+        String email = booking.getEmail();
+
+        Customer customer = null;
+        if (phone != null && !phone.isBlank()) {
+            customer = customerRepository.findByPhone(phone).orElse(null);
+        }
+        if (customer == null && email != null && !email.isBlank()) {
+            customer = customerRepository.findByEmail(email).orElse(null);
+        }
+
+        if (customer == null) {
+            // No existing customer found - create a new one
+            customer = customerRepository.save(new Customer(booking.getName(), phone, email));
+        } else {
+            // Existing customer found - ensure we populate any missing contact info
+            boolean updated = false;
+            if ((customer.getEmail() == null || customer.getEmail().isBlank()) && email != null && !email.isBlank()) {
+                customer.setEmail(email);
+                updated = true;
+            }
+            if ((customer.getPhone() == null || customer.getPhone().isBlank()) && phone != null && !phone.isBlank()) {
+                customer.setPhone(phone);
+                updated = true;
+            }
+            if (updated) {
+                customerRepository.save(customer);
+            }
+        }
 
         // Link booking to customer
         booking.setCustomerId(customer.getId());
@@ -110,10 +207,8 @@ public class BookingController {
                 if (svc != null) {
                     // Always store the human-readable service name for persistence and emails
                     booking.setService(svc.getName());
-                    // If price wasn't provided, set it from the service
-                    if (booking.getPrice() == null && svc.getPrice() != null) {
-                        booking.setPrice(svc.getPrice());
-                    }
+                    // Do NOT auto-copy service price into booking.price here.
+                    // The booking price (final/completed amount) should be set by admin when inspection/completion occurs.
                 }
             } catch (Exception e) {
                 // swallow - if lookup fails we'll keep the original value
@@ -134,8 +229,8 @@ public class BookingController {
         // Format: HOMY{YEAR}{seq padded to 6 digits} e.g. HOMY202500001
         int year = LocalDateTime.now().getYear();
         long idVal = saved.getId() != null ? saved.getId() : 0L;
-        String seqPadded = String.format("%06d", idVal);
-        String reference = "HOMY" + year + seqPadded;
+        String seq = String.valueOf(idVal);
+        String reference = "HOMY" + year + seq;
         saved.setReference(reference);
         bookingRepository.save(saved);
 
@@ -159,15 +254,27 @@ public class BookingController {
             ex.printStackTrace();
         }
 
+        // Attempt automatic technician assignment (best-effort)
+        try {
+            assignmentService.assignTechnicianForBooking(saved);
+        } catch (Exception e) {
+            // Do not fail booking creation if assignment fails
+            e.printStackTrace();
+        }
+
         return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Booking> update(@PathVariable Long id, @RequestBody Booking booking) {
+    public ResponseEntity<Booking> update(
+            @PathVariable Long id,
+            @RequestBody Booking booking,
+            @RequestParam(name = "sendEmail", required = false) Boolean sendEmail
+    ) {
         return bookingRepository.findById(id).map(existing -> {
             String oldStatus = existing.getStatus();
             String newStatus = booking.getStatus();
-            
+
             // Only update fields provided in the request (avoid overwriting with nulls)
             if (booking.getStatus() != null) existing.setStatus(booking.getStatus());
             if (booking.getMessage() != null) existing.setMessage(booking.getMessage());
@@ -176,12 +283,54 @@ public class BookingController {
             if (booking.getName() != null) existing.setName(booking.getName());
             if (booking.getPhone() != null) existing.setPhone(booking.getPhone());
             if (booking.getEmail() != null) existing.setEmail(booking.getEmail());
-            if (booking.getTotalAmount() != null) existing.setTotalAmount(booking.getTotalAmount());
-            
+            if (booking.getTotalAmount() != null) {
+                // When admin provides a completed/total amount, store it in both totalAmount and price fields
+                existing.setTotalAmount(booking.getTotalAmount());
+                existing.setPrice(booking.getTotalAmount());
+            }
+
+            // Store admin approval/status update fields
+            if (booking.getInstruments() != null) existing.setInstruments(booking.getInstruments());
+            if (booking.getExtraAmount() != null) existing.setExtraAmount(booking.getExtraAmount());
+            if (booking.getAdditionalService() != null) existing.setAdditionalService(booking.getAdditionalService());
+            if (booking.getCancelReason() != null) existing.setCancelReason(booking.getCancelReason());
+            if (booking.getAdminNotes() != null) existing.setAdminNotes(booking.getAdminNotes());
+            if (booking.getAdditionalServiceName() != null) existing.setAdditionalServiceName(booking.getAdditionalServiceName());
+            if (booking.getAdditionalServicePrice() != null) existing.setAdditionalServicePrice(booking.getAdditionalServicePrice());
+            if (booking.getAdditionalServicesJson() != null) existing.setAdditionalServicesJson(booking.getAdditionalServicesJson());
+            if (booking.getCompletionDate() != null) existing.setCompletionDate(booking.getCompletionDate());
+            if (booking.getTechnicianId() != null) existing.setTechnicianId(booking.getTechnicianId());
+            if (booking.getTechnicianStatus() != null) existing.setTechnicianStatus(booking.getTechnicianStatus());
+
+            // If admin changed booking.status to COMPLETED or CANCELLED, ensure technicianStatus follows
+            if (newStatus != null) {
+                String ns = newStatus.toUpperCase();
+                if (ns.equals("COMPLETED")) {
+                    existing.setTechnicianStatus("COMPLETED");
+                    if (existing.getCompletionDate() == null) {
+                        existing.setCompletionDate(LocalDateTime.now().toString());
+                    }
+                } else if (ns.equals("CANCELLED")) {
+                    existing.setTechnicianStatus("CANCELLED");
+                }
+            }
+
             Booking updated = bookingRepository.save(existing);
-            
-            // Send status change email if status has changed
+
+            // Decide whether to send email: if sendEmail param provided, use it; otherwise
+            // only send emails for APPROVED/COMPLETED/CANCELLED transitions
+            boolean shouldSend = false;
             if (oldStatus != null && newStatus != null && !oldStatus.equals(newStatus)) {
+                if (sendEmail != null) {
+                    shouldSend = sendEmail.booleanValue();
+                } else {
+                    String next = newStatus.toUpperCase();
+                    // Send emails for ASSIGNED (previously APPROVED), COMPLETED or CANCELLED
+                    shouldSend = next.equals("APPROVED") || next.equals("ASSIGNED") || next.equals("COMPLETED") || next.equals("CANCELLED");
+                }
+            }
+
+            if (shouldSend) {
                 try {
                     emailService.sendStatusChangeEmail(updated, oldStatus, newStatus);
                 } catch (Exception e) {
@@ -189,7 +338,7 @@ public class BookingController {
                     e.printStackTrace();
                 }
             }
-            
+
             return ResponseEntity.ok(updated);
         }).orElse(ResponseEntity.notFound().build());
     }

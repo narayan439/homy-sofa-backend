@@ -29,6 +29,20 @@ public class JwtUtil {
         return Jwts.builder()
                 .setSubject(userId)
                 .claim("email", email)
+                .claim("role", "ADMIN")
+                .setIssuedAt(now)
+                .setExpiration(exp)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    public String generateToken(String userId, String email, String role) {
+        Date now = new Date();
+        Date exp = new Date(now.getTime() + expiration);
+        return Jwts.builder()
+                .setSubject(userId)
+                .claim("email", email)
+                .claim("role", role)
                 .setIssuedAt(now)
                 .setExpiration(exp)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)

@@ -26,6 +26,9 @@ public class Booking {
     private String message;
 
     private String date; // keep as string to match frontend format
+    
+    @Column(name = "time_slot")
+    private String timeSlot; // morning/afternoon/evening or custom
 
 
     private String status; // PENDING / APPROVED / COMPLETED / CANCELLED
@@ -45,6 +48,47 @@ public class Booking {
     @Column(name = "created_at", columnDefinition = "DATETIME(6) DEFAULT CURRENT_TIMESTAMP")
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    // Provide a serialized bookingDate field (transient) derived from createdAt for frontend compatibility
+    @Transient
+    private String bookingDate;
+
+    @Column(name = "completion_date")
+    private String completionDate; // When the booking was completed (format: yyyy-MM-dd or similar)
+
+    // Admin approval/status update fields
+    @Column(length = 500)
+    private String instruments; // e.g., "drill, wrench, screwdriver"
+
+    @Column(name = "extra_amount", columnDefinition = "DOUBLE")
+    private Double extraAmount; // Amount needed in addition to service price
+
+    @Column(name = "additional_service")
+    private Boolean additionalService; // Whether admin approved additional service
+
+    @Column(length = 256)
+    private String cancelReason; // Reason for cancellation
+
+    @Column(length = 500)
+    private String adminNotes; // Admin notes during status update
+
+    @Column(length = 256)
+    private String additionalServiceName; // Name of additional service approved by admin
+
+    @Column(name = "additional_service_price", columnDefinition = "DOUBLE")
+    private Double additionalServicePrice; // Price of additional service
+
+    @Column(name = "additional_services_json", columnDefinition = "LONGTEXT")
+    private String additionalServicesJson; // JSON array of multiple services: [{"id":"1","name":"Service","price":100}]
+
+    @Column(name = "technician_id")
+    private Long technicianId;
+
+    @Column(name = "technician_status")
+    private String technicianStatus; // ASSIGNED / IN_PROGRESS / COMPLETED
+
+    @Column(name = "technician_notes", length = 1000)
+    private String technicianNotes; // Notes provided by technician upon completion
+
     public Booking() {}
 
     // Getters and setters
@@ -63,6 +107,8 @@ public class Booking {
     public void setMessage(String message) { this.message = message; }
     public String getDate() { return date; }
     public void setDate(String date) { this.date = date; }
+    public String getTimeSlot() { return timeSlot; }
+    public void setTimeSlot(String timeSlot) { this.timeSlot = timeSlot; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Double getTotalAmount() { return totalAmount; }
@@ -73,8 +119,48 @@ public class Booking {
     public void setReference(String reference) { this.reference = reference; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public String getBookingDate() {
+        if (this.createdAt != null) return this.createdAt.toString();
+        return this.bookingDate;
+    }
+    public void setBookingDate(String bookingDate) { this.bookingDate = bookingDate; }
+    public String getCompletionDate() { return completionDate; }
+    public void setCompletionDate(String completionDate) { this.completionDate = completionDate; }
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
+
+    public String getInstruments() { return instruments; }
+    public void setInstruments(String instruments) { this.instruments = instruments; }
+
+    public Double getExtraAmount() { return extraAmount; }
+    public void setExtraAmount(Double extraAmount) { this.extraAmount = extraAmount; }
+
+    public Boolean getAdditionalService() { return additionalService; }
+    public void setAdditionalService(Boolean additionalService) { this.additionalService = additionalService; }
+
+    public String getCancelReason() { return cancelReason; }
+    public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
+
+    public String getAdminNotes() { return adminNotes; }
+    public void setAdminNotes(String adminNotes) { this.adminNotes = adminNotes; }
+
+    public String getAdditionalServiceName() { return additionalServiceName; }
+    public void setAdditionalServiceName(String additionalServiceName) { this.additionalServiceName = additionalServiceName; }
+
+    public Double getAdditionalServicePrice() { return additionalServicePrice; }
+    public void setAdditionalServicePrice(Double additionalServicePrice) { this.additionalServicePrice = additionalServicePrice; }
+
+    public String getAdditionalServicesJson() { return additionalServicesJson; }
+    public void setAdditionalServicesJson(String additionalServicesJson) { this.additionalServicesJson = additionalServicesJson; }
+
+    public Long getTechnicianId() { return technicianId; }
+    public void setTechnicianId(Long technicianId) { this.technicianId = technicianId; }
+
+    public String getTechnicianStatus() { return technicianStatus; }
+    public void setTechnicianStatus(String technicianStatus) { this.technicianStatus = technicianStatus; }
+
+    public String getTechnicianNotes() { return technicianNotes; }
+    public void setTechnicianNotes(String technicianNotes) { this.technicianNotes = technicianNotes; }
 
     // Transient fields to receive/store address information from client
     @Transient

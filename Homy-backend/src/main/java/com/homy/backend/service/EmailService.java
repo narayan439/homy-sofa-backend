@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import com.homy.backend.repository.ServiceRepository;
 import com.homy.backend.model.ServiceEntity;
+import org.springframework.scheduling.annotation.Async;
 
 @Service
 public class EmailService {
@@ -32,13 +33,43 @@ public class EmailService {
     @Value("${app.email.from:noreply@homysofa.com}")
     private String fromEmail;
 
+    @Value("${app.email.enabled:true}")
+    private boolean emailEnabled;
+
     @Value("${app.app.name:Homy Sofa}")
     private String appName;
 
     /**
-     * Send booking confirmation email with HTML template
+     * Validate email address format
      */
+    private boolean isValidEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            return false;
+        }
+        // Basic email validation
+        return email.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+    }
+
+    /**
+     * Get safe from email address with fallback
+     */
+    private String getSafeFromEmail() {
+        if (isValidEmail(fromEmail)) {
+            return fromEmail.trim();
+        }
+        // Fallback to hardcoded default
+        return "noreply@homysofa.com";
+    }
+
+    /**
+     * Send booking confirmation email asynchronously with HTML template
+     */
+    @Async  // Execute in background thread without blocking API response
     public void sendBookingConfirmation(Booking booking) {
+        if (!emailEnabled) {
+            logger.info("Email sending is disabled by configuration - skipping booking confirmation for booking id={}", booking.getId());
+            return;
+        }
         if (booking.getEmail() == null || booking.getEmail().isEmpty()) {
             logger.warn("Booking has no email, skipping confirmation for booking id={}", booking.getId());
             return;
@@ -64,7 +95,7 @@ public class EmailService {
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
             helper.setTo(booking.getEmail());
-            helper.setFrom(fromEmail);
+            helper.setFrom(getSafeFromEmail());  // Use safe from email with validation
             helper.setSubject("Booking Confirmation - " + appName);
 
             String htmlBody = buildConfirmationEmailHtml(booking);
@@ -77,6 +108,7 @@ public class EmailService {
         } catch (Exception ex) {
             // Catch MailException and other runtime exceptions from JavaMailSender.send
             logger.error("Failed to send booking confirmation email to {}: {}", booking.getEmail(), ex.getMessage(), ex);
+            // Do not rethrow - keep async failures contained
         }
     }
 
@@ -163,8 +195,8 @@ public class EmailService {
             "            <p>If you have any questions, please don't hesitate to contact us.</p>\n" +
             "\n" +
             "            <div class=\"footer\">\n" +
-            "                <p>© %d %s. All rights reserved.</p>\n" +
-            "                <p>Booking confirmed on: %s</p>\n" +
+            "                <p>© 2026 Homy Sofa. All rights reserved.</p>\n" +
+            // "                <p>Booking confirmed on: %s</p>\n" +
             "            </div>\n" +
             "        </div>\n" +
             "    </div>\n" +
@@ -177,16 +209,21 @@ public class EmailService {
             bookingDate,
             booking.getPhone() != null ? booking.getPhone() : "Not provided",
             booking.getEmail(),
-            LocalDateTime.now().getYear(),
+            String.valueOf(LocalDateTime.now().getYear()),
             appName,
             confirmationDate
         );
     }
 
     /**
-     * Send booking status change email
+     * Send booking status change email asynchronously
      */
+    @Async  // Execute in background thread without blocking API response
     public void sendStatusChangeEmail(Booking booking, String oldStatus, String newStatus) {
+        if (!emailEnabled) {
+            logger.info("Email sending is disabled by configuration - skipping status change email for booking id={}", booking.getId());
+            return;
+        }
         if (booking.getEmail() == null || booking.getEmail().isEmpty()) {
             logger.warn("Booking has no email, skipping status change email for booking id={}", booking.getId());
             return;
@@ -199,7 +236,7 @@ public class EmailService {
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "utf-8");
             
-            helper.setFrom(fromEmail);
+            helper.setFrom(getSafeFromEmail());  // Use safe from email with validation
             helper.setTo(booking.getEmail());
             helper.setSubject(getStatusChangeEmailSubject(newStatus));
             helper.setText(buildStatusChangeEmailContent(booking, oldStatus, newStatus), true);
@@ -208,8 +245,35 @@ public class EmailService {
             logger.info("Status change email sent successfully to {} for booking id={}", 
                 booking.getEmail(), booking.getId());
         } catch (MessagingException e) {
-            logger.error("Failed to send status change email for booking id={}", booking.getId(), e);
-            throw new RuntimeException("Failed to send status change email", e);
+            logger.error("Failed to build status change email for booking id={}: {}", booking.getId(), e.getMessage(), e);
+            // Do not rethrow - keep async failures contained
+        } catch (Exception e) {
+            logger.error("Failed to send status change email for booking id={}: {}", booking.getId(), e.getMessage(), e);
+            // Do not rethrow - keep async failures contained
+        }
+    }
+
+    /**
+     * Notify technician about new assignment
+     */
+    @Async
+    public void sendTechnicianAssignment(com.homy.backend.model.Technician tech, Booking booking) {
+        if (!emailEnabled) return;
+        if (tech == null || tech.getEmail() == null || tech.getEmail().isBlank()) return;
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setTo(tech.getEmail());
+            helper.setFrom(getSafeFromEmail());
+            helper.setSubject("New Job Assigned - " + appName);
+            String body = String.format("Hello %s,\n\nA new booking has been assigned to you: %s (Customer: %s, Phone: %s).\n\nPlease check the technician dashboard to accept or start the job.",
+                    tech.getName() != null ? tech.getName() : "Technician",
+                    booking.getReference() != null ? booking.getReference() : ("ID-" + booking.getId()),
+                    booking.getName(), booking.getPhone());
+            helper.setText(body, false);
+            mailSender.send(message);
+        } catch (Exception e) {
+            logger.error("Failed to notify technician {} about assignment: {}", tech.getEmail(), e.getMessage());
         }
     }
 
@@ -219,7 +283,8 @@ public class EmailService {
     private String getStatusChangeEmailSubject(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
-                return "Your Booking is Approved - " + appName;
+            case "ASSIGNED":
+                return "Your Booking is Assigned - " + appName;
             case "COMPLETED":
                 return "Your Booking is Completed - " + appName;
             case "CANCELLED":
@@ -295,8 +360,8 @@ public class EmailService {
             "            <p>If you have any questions regarding this status change, please feel free to contact us.</p>\n" +
             "\n" +
             "            <div class=\"footer\">\n" +
-            "                <p>© %d %s. All rights reserved.</p>\n" +
-            "                <p>Update sent on: %s</p>\n" +
+            "                <p>© 2026 Homy Sofa. All rights reserved.</p>\n" +
+            // "                <p>Update sent on: %s</p>\n" +
             "            </div>\n" +
             "        </div>\n" +
             "    </div>\n" +
@@ -319,7 +384,7 @@ public class EmailService {
             serviceName,
             newStatus,
             booking.getDate() != null ? booking.getDate() : "Not specified",
-            LocalDateTime.now().getYear(),
+            String.valueOf(LocalDateTime.now().getYear()),
             appName,
             LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm:ss"))
         );
@@ -331,7 +396,8 @@ public class EmailService {
     private String getStatusMessage(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
-                return "Your booking has been approved!";
+            case "ASSIGNED":
+                return "Your booking has been assigned!";
             case "COMPLETED":
                 return "Your booking is complete!";
             case "CANCELLED":
@@ -347,6 +413,7 @@ public class EmailService {
     private String getStatusColor(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
+            case "ASSIGNED":
                 return "#4CAF50";  // Green
             case "COMPLETED":
                 return "#2196F3";  // Blue
@@ -363,6 +430,7 @@ public class EmailService {
     private String getStatusBgColor(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
+            case "ASSIGNED":
                 return "#E8F5E9";  // Light green
             case "COMPLETED":
                 return "#E3F2FD";  // Light blue
@@ -379,6 +447,7 @@ public class EmailService {
     private String getStatusIcon(String status) {
         switch (status.toUpperCase()) {
             case "APPROVED":
+            case "ASSIGNED":
                 return "✓";  // Checkmark
             case "COMPLETED":
                 return "✓✓";  // Double checkmark
