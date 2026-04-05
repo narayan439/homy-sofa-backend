@@ -1,13 +1,15 @@
 package com.homy.backend.controller;
 
 import com.homy.backend.model.Booking;
-import com.homy.backend.model.Customer;
+import com.homy.backend.model.User;
 import com.homy.backend.repository.BookingRepository;
-import com.homy.backend.repository.CustomerRepository;
 import com.homy.backend.repository.ServiceRepository;
+import com.homy.backend.repository.UserRepository;
 import com.homy.backend.model.ServiceEntity;
 // booking sequence not required when using DB id
 import com.homy.backend.service.EmailService;
+import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -25,10 +27,10 @@ public class BookingController {
     private BookingRepository bookingRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private ServiceRepository serviceRepository;
 
     @Autowired
-    private ServiceRepository serviceRepository;
+    private UserRepository userRepository;
 
     
 
@@ -37,6 +39,9 @@ public class BookingController {
 
     @Autowired
     private com.homy.backend.repository.AddressRepository addressRepository;
+
+    @Autowired
+    private com.homy.backend.repository.TechnicianRepository technicianRepository;
 
     @Autowired
     private com.homy.backend.service.AssignmentService assignmentService;
@@ -56,20 +61,23 @@ public class BookingController {
             // ignore address lookup failures
         }
 
-        // Enrich bookings with customer details and addresses
+        // Attach address from cache for each booking
         for (Booking b : all) {
-            if (b.getCustomerId() != null) {
-                customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
-                    if (c.getName() != null) b.setName(c.getName());
-                    if (c.getPhone() != null) b.setPhone(c.getPhone());
-                    if (c.getEmail() != null) b.setEmail(c.getEmail());
-                });
-            }
-            // Attach address from cache instead of per-query
             if (b.getId() != null && addressMap.containsKey(b.getId())) {
                 com.homy.backend.model.Address a = addressMap.get(b.getId());
                 b.setAddress(a.getAddressText());
                 b.setLatLong(a.getLatLong());
+            }
+            // Attach technician info if available
+            try {
+                if (b.getTechnicianId() != null) {
+                    technicianRepository.findById(b.getTechnicianId()).ifPresent(t -> {
+                        if (t.getName() != null) b.setTechnicianName(t.getName());
+                        if (t.getPhone() != null) b.setTechnicianPhone(t.getPhone());
+                    });
+                }
+            } catch (Exception e) {
+                // ignore
             }
         }
         return all;
@@ -90,20 +98,26 @@ public class BookingController {
 
         return bookingRepository.findByReferenceAndPhone(ref, phone)
                 .map(b -> {
-                    if (b.getCustomerId() != null) {
-                        customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
-                            if (c.getName() != null) b.setName(c.getName());
-                            if (c.getPhone() != null) b.setPhone(c.getPhone());
-                            if (c.getEmail() != null) b.setEmail(c.getEmail());
-                        });
-                    }
                     try {
-                        addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                        var maybeAddr = addressRepository.findByBookingId(b.getId());
+                        if (maybeAddr.isPresent()) {
+                            var a = maybeAddr.get();
                             b.setAddress(a.getAddressText());
                             b.setLatLong(a.getLatLong());
-                        });
+                        }
                     } catch (Exception e) {
                         // ignore address lookup failures
+                    }
+                    // Attach technician info if available
+                    try {
+                        if (b.getTechnicianId() != null) {
+                            technicianRepository.findById(b.getTechnicianId()).ifPresent(t -> {
+                                if (t.getName() != null) b.setTechnicianName(t.getName());
+                                if (t.getPhone() != null) b.setTechnicianPhone(t.getPhone());
+                            });
+                        }
+                    } catch (Exception e) {
+                        // ignore
                     }
                     return ResponseEntity.ok(b);
                 })
@@ -114,19 +128,25 @@ public class BookingController {
     public ResponseEntity<Booking> getById(@PathVariable Long id) {
         return bookingRepository.findById(id)
                 .map(b -> {
-                    if (b.getCustomerId() != null) {
-                        customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
-                            if (c.getName() != null) b.setName(c.getName());
-                            if (c.getPhone() != null) b.setPhone(c.getPhone());
-                            if (c.getEmail() != null) b.setEmail(c.getEmail());
-                        });
-                    }
                     // Attach address info if present
                     try {
-                        addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
+                        var maybeAddr = addressRepository.findByBookingId(b.getId());
+                        if (maybeAddr.isPresent()) {
+                            var a = maybeAddr.get();
                             b.setAddress(a.getAddressText());
                             b.setLatLong(a.getLatLong());
-                        });
+                        }
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                    // Attach technician info if available
+                    try {
+                        if (b.getTechnicianId() != null) {
+                            technicianRepository.findById(b.getTechnicianId()).ifPresent(t -> {
+                                if (t.getName() != null) b.setTechnicianName(t.getName());
+                                if (t.getPhone() != null) b.setTechnicianPhone(t.getPhone());
+                            });
+                        }
                     } catch (Exception e) {
                         // ignore
                     }
@@ -135,130 +155,97 @@ public class BookingController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/customer/{email}")
-    public List<Booking> getByCustomerEmail(@PathVariable String email) {
-        List<Booking> list = bookingRepository.findByEmail(email);
-        // Enrich bookings with any related customer/address info similar to getAll()
-        for (Booking b : list) {
-            if (b.getCustomerId() != null) {
-                customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
-                    if (c.getName() != null) b.setName(c.getName());
-                    if (c.getPhone() != null) b.setPhone(c.getPhone());
-                    if (c.getEmail() != null) b.setEmail(c.getEmail());
-                });
-            }
-            try {
-                if (b.getId() != null) {
-                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
-                        b.setAddress(a.getAddressText());
-                        b.setLatLong(a.getLatLong());
-                    });
-                }
-            } catch (Exception e) {
-                // ignore address lookup failures
-            }
-        }
-        return list;
-    }
-
     @PostMapping
     @Transactional
-    public ResponseEntity<Booking> create(@RequestBody Booking booking) {
+    public ResponseEntity<?> create(@RequestBody Booking booking, HttpServletRequest request) {
+        System.out.println("[BookingController.create] Starting booking creation...");
+        
         if (booking.getStatus() == null) booking.setStatus("PENDING");
 
-        // Find or create customer by phone OR email (prefer phone when available)
-        String phone = booking.getPhone();
-        String email = booking.getEmail();
-
-        Customer customer = null;
-        if (phone != null && !phone.isBlank()) {
-            customer = customerRepository.findByPhone(phone).orElse(null);
-        }
-        if (customer == null && email != null && !email.isBlank()) {
-            customer = customerRepository.findByEmail(email).orElse(null);
-        }
-
-        if (customer == null) {
-            // No existing customer found - create a new one
-            customer = customerRepository.save(new Customer(booking.getName(), phone, email));
+        // Extract userId from JWT token if available
+        Long userId = null;
+        Claims claims = (Claims) request.getAttribute("claims");
+        System.out.println("[BookingController.create] Claims from request: " + claims);
+        
+        if (claims != null) {
+            String userIdStr = claims.getSubject();
+            System.out.println("[BookingController.create] Subject from claims: " + userIdStr);
+            
+            if (userIdStr != null && !userIdStr.isBlank()) {
+                try {
+                    userId = Long.parseLong(userIdStr);
+                    System.out.println("[BookingController.create] Parsed userId: " + userId);
+                } catch (NumberFormatException e) {
+                    System.err.println("[BookingController.create] Could not parse userId from JWT: " + userIdStr);
+                }
+            }
         } else {
-            // Existing customer found - ensure we populate any missing contact info
-            boolean updated = false;
-            if ((customer.getEmail() == null || customer.getEmail().isBlank()) && email != null && !email.isBlank()) {
-                customer.setEmail(email);
-                updated = true;
-            }
-            if ((customer.getPhone() == null || customer.getPhone().isBlank()) && phone != null && !phone.isBlank()) {
-                customer.setPhone(phone);
-                updated = true;
-            }
-            if (updated) {
-                customerRepository.save(customer);
-            }
+            System.out.println("[BookingController.create] No claims found in request (user not authenticated)");
         }
 
-        // Link booking to customer
-        booking.setCustomerId(customer.getId());
+        // Link booking to authenticated user
+        if (userId != null) {
+            System.out.println("[BookingController.create] Looking up user with ID: " + userId);
+            var userOpt = userRepository.findById(userId);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                System.out.println("[BookingController.create] User found: " + user.getEmail() + " (ID: " + user.getId() + ")");
+                booking.setUser(user);
+                booking.setUserId(userId);  // Explicitly set userId for proper persistence
+                System.out.println("[BookingController.create] Set booking userId: " + booking.getUserId());
+            } else {
+                System.err.println("[BookingController.create] User not found for ID: " + userId);
+                userId = null;  // Reset userId if user not found
+            }
+        }
 
         // If booking.service looks like an internal id, try to resolve service entity
         if (booking.getService() != null) {
             try {
                 ServiceEntity svc = serviceRepository.findById(booking.getService()).orElse(null);
                 if (svc != null) {
-                    // Always store the human-readable service name for persistence and emails
                     booking.setService(svc.getName());
-                    // Do NOT auto-copy service price into booking.price here.
-                    // The booking price (final/completed amount) should be set by admin when inspection/completion occurs.
                 }
             } catch (Exception e) {
                 // swallow - if lookup fails we'll keep the original value
             }
         }
 
-        // Prevent customer from booking the same service multiple times while they have an active booking
-        Booking existingBooking = bookingRepository.findActiveBookingForService(customer.getId(), booking.getService());
-        if (existingBooking != null) {
-            // Return 409 with the existing booking reference
-            return ResponseEntity.status(409).body(existingBooking);
-        }
-
-        // Save booking first (so DB persists any fields), then obtain DB id for reference
+        // Save booking
         Booking saved = bookingRepository.save(booking);
+        System.out.println("[BookingController.create] Booking saved with ID: " + saved.getId() + ", userId: " + saved.getUserId());
 
-        // Generate reference using DB-generated id and save again.
-        // Format: HOMY{YEAR}{seq padded to 6 digits} e.g. HOMY202500001
+        // Generate reference using DB-generated id
         int year = LocalDateTime.now().getYear();
         long idVal = saved.getId() != null ? saved.getId() : 0L;
         String seq = String.valueOf(idVal);
         String reference = "HOMY" + year + seq;
         saved.setReference(reference);
         bookingRepository.save(saved);
+        System.out.println("[BookingController.create] Final booking - ID: " + saved.getId() + ", userId: " + saved.getUserId() + ", reference: " + reference);
 
-        // Send confirmation email asynchronously (simple fire-and-forget)
+        // Send confirmation email asynchronously
         try { emailService.sendBookingConfirmation(saved); } catch (Exception e) {}
 
-        // Persist address if provided (store lat,long as comma separated and full address text)
+        // Persist address if provided
         try {
             if ((booking.getAddress() != null && !booking.getAddress().isBlank()) ||
                 (booking.getLatLong() != null && !booking.getLatLong().isBlank())) {
 
                 com.homy.backend.model.Address addr = new com.homy.backend.model.Address();
                 addr.setBookingId(saved.getId());
-                addr.setCustomerId(saved.getCustomerId());
                 addr.setAddressText(booking.getAddress());
                 addr.setLatLong(booking.getLatLong());
                 addressRepository.save(addr);
             }
         } catch (Exception ex) {
-            // Do not fail booking creation if address persistence fails; log and continue
             ex.printStackTrace();
         }
 
-        // Attempt automatic technician assignment (best-effort)
+        // Attempt automatic technician assignment
         try {
             assignmentService.assignTechnicianForBooking(saved);
         } catch (Exception e) {
-            // Do not fail booking creation if assignment fails
             e.printStackTrace();
         }
 
@@ -349,5 +336,29 @@ public class BookingController {
             bookingRepository.delete(b);
             return ResponseEntity.ok().build();
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    // User Bookings -User dashboard to view their bookings
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<?> getUserBookings(@PathVariable Long userId) {
+        try {
+            List<Booking> bookings = bookingRepository.findByUserIdOrderByCreatedAtDesc(userId);
+            // Enrich bookings with technician info
+            for (Booking b : bookings) {
+                try {
+                    if (b.getTechnicianId() != null) {
+                        technicianRepository.findById(b.getTechnicianId()).ifPresent(t -> {
+                            if (t.getName() != null) b.setTechnicianName(t.getName());
+                            if (t.getPhone() != null) b.setTechnicianPhone(t.getPhone());
+                        });
+                    }
+                } catch (Exception e) {
+                    // ignore technician lookup failures
+                }
+            }
+            return ResponseEntity.ok(bookings);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error fetching user bookings: " + e.getMessage());
+        }
     }
 }

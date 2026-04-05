@@ -6,6 +6,8 @@ import com.homy.backend.repository.BookingRepository;
 import com.homy.backend.repository.TechnicianRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 
 import java.util.List;
 import java.util.Map;
@@ -42,23 +44,35 @@ public class TechnicianService {
             }
             t.setTechnicianId(code);
         }
-        return technicianRepository.save(t);
+        Technician saved = technicianRepository.save(t);
+        // Invalidate cache when creating new technician
+        clearAllTechniciansCache();
+        return saved;
     }
 
     public boolean deleteTechnician(Long id) {
         if (!technicianRepository.existsById(id)) return false;
         technicianRepository.deleteById(id);
+        // Invalidate cache when deleting
+        clearAllTechniciansCache();
         return true;
+    }
+
+    @CacheEvict(value = "technicians", allEntries = true)
+    private void clearAllTechniciansCache() {
+        // This method is called implicitly by @CacheEvict annotation
     }
 
     public boolean setTechnicianPassword(Long id, String encodedPassword) {
         return technicianRepository.findById(id).map(t -> {
             t.setPassword(encodedPassword);
             technicianRepository.save(t);
+            clearAllTechniciansCache();
             return true;
         }).orElse(false);
     }
 
+    @CacheEvict(value = "technicians", allEntries = true)
     public Technician updateTechnician(Long id, Technician updated) {
         return technicianRepository.findById(id).map(existing -> {
             existing.setName(updated.getName());
@@ -71,6 +85,7 @@ public class TechnicianService {
         }).orElse(null);
     }
 
+    @Cacheable(value = "technicians", unless = "#result == null || #result.isEmpty()")
     public List<Technician> getAllTechnicians() {
         return technicianRepository.findAll();
     }
@@ -154,24 +169,44 @@ public class TechnicianService {
     public List<Booking> getBookingsForTechnician(Long technicianId) {
         // Backwards-compatible method: return full list (not paginated)
         List<Booking> list = bookingRepository.findByTechnicianId(technicianId);
-        // Enrich with customer info and address where available
+
+        // Extract all booking IDs and customer IDs for batch queries (avoid N+1)
+        java.util.Set<Long> bookingIds = new java.util.HashSet<>();
+        java.util.Set<Long> customerIds = new java.util.HashSet<>();
         for (Booking b : list) {
-            if (b.getCustomerId() != null) {
-                customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
-                    if (c.getName() != null) b.setName(c.getName());
-                    if (c.getPhone() != null) b.setPhone(c.getPhone());
-                    if (c.getEmail() != null) b.setEmail(c.getEmail());
-                });
+            bookingIds.add(b.getId());
+            if (b.getCustomerId() != null) customerIds.add(b.getCustomerId());
+        }
+
+        // Batch load all addresses for these bookings (single query)
+        java.util.Map<Long, com.homy.backend.model.Address> addresses = new java.util.HashMap<>();
+        if (!bookingIds.isEmpty()) {
+            addressRepository.findByBookingIds(new java.util.ArrayList<>(bookingIds)).forEach(a -> {
+                if (a.getBookingId() != null) addresses.put(a.getBookingId(), a);
+            });
+        }
+
+        // Batch load all customers for these bookings (single query)
+        java.util.Map<Long, com.homy.backend.model.Customer> customers = new java.util.HashMap<>();
+        if (!customerIds.isEmpty()) {
+            customerRepository.findAllById(customerIds).forEach(c -> customers.put(c.getId(), c));
+        }
+
+        // Enrich bookings with pre-loaded customer and address data
+        for (Booking b : list) {
+            // Add customer info from batch load
+            if (b.getCustomerId() != null && customers.containsKey(b.getCustomerId())) {
+                com.homy.backend.model.Customer c = customers.get(b.getCustomerId());
+                if (c.getName() != null) b.setName(c.getName());
+                if (c.getPhone() != null) b.setPhone(c.getPhone());
+                if (c.getEmail() != null) b.setEmail(c.getEmail());
             }
-            try {
-                if (b.getId() != null) {
-                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
-                        b.setAddress(a.getAddressText());
-                        b.setLatLong(a.getLatLong());
-                    });
-                }
-            } catch (Exception e) {
-                // ignore address lookup failures
+
+            // Add address info from batch load
+            if (addresses.containsKey(b.getId())) {
+                com.homy.backend.model.Address addr = addresses.get(b.getId());
+                b.setAddress(addr.getAddressText());
+                b.setLatLong(addr.getLatLong());
             }
         }
         return list;
@@ -182,24 +217,43 @@ public class TechnicianService {
         Page<Booking> pg = bookingRepository.findByTechnicianId(technicianId, pr);
         List<Booking> list = pg.getContent();
 
-        // Enrich bookings similar to non-paginated method
+        // Extract all booking IDs and customer IDs for batch queries (avoid N+1)
+        java.util.Set<Long> bookingIds = new java.util.HashSet<>();
+        java.util.Set<Long> customerIds = new java.util.HashSet<>();
         for (Booking b : list) {
-            if (b.getCustomerId() != null) {
-                customerRepository.findById(b.getCustomerId()).ifPresent(c -> {
-                    if (c.getName() != null) b.setName(c.getName());
-                    if (c.getPhone() != null) b.setPhone(c.getPhone());
-                    if (c.getEmail() != null) b.setEmail(c.getEmail());
-                });
+            bookingIds.add(b.getId());
+            if (b.getCustomerId() != null) customerIds.add(b.getCustomerId());
+        }
+
+        // Batch load all addresses for these bookings (single query)
+        java.util.Map<Long, com.homy.backend.model.Address> addresses = new java.util.HashMap<>();
+        if (!bookingIds.isEmpty()) {
+            addressRepository.findByBookingIds(new java.util.ArrayList<>(bookingIds)).forEach(a -> {
+                if (a.getBookingId() != null) addresses.put(a.getBookingId(), a);
+            });
+        }
+
+        // Batch load all customers for these bookings (single query)
+        java.util.Map<Long, com.homy.backend.model.Customer> customers = new java.util.HashMap<>();
+        if (!customerIds.isEmpty()) {
+            customerRepository.findAllById(customerIds).forEach(c -> customers.put(c.getId(), c));
+        }
+
+        // Enrich bookings with pre-loaded customer and address data
+        for (Booking b : list) {
+            // Add customer info from batch load
+            if (b.getCustomerId() != null && customers.containsKey(b.getCustomerId())) {
+                com.homy.backend.model.Customer c = customers.get(b.getCustomerId());
+                if (c.getName() != null) b.setName(c.getName());
+                if (c.getPhone() != null) b.setPhone(c.getPhone());
+                if (c.getEmail() != null) b.setEmail(c.getEmail());
             }
-            try {
-                if (b.getId() != null) {
-                    addressRepository.findByBookingId(b.getId()).ifPresent(a -> {
-                        b.setAddress(a.getAddressText());
-                        b.setLatLong(a.getLatLong());
-                    });
-                }
-            } catch (Exception e) {
-                // ignore address lookup failures
+
+            // Add address info from batch load (booking-specific address)
+            if (addresses.containsKey(b.getId())) {
+                com.homy.backend.model.Address addr = addresses.get(b.getId());
+                b.setAddress(addr.getAddressText());
+                b.setLatLong(addr.getLatLong());
             }
         }
 
@@ -245,6 +299,24 @@ public class TechnicianService {
             }
             if (payload.containsKey("additionalServicesJson")) {
                 b.setAdditionalServicesJson(String.valueOf(payload.get("additionalServicesJson")));
+            }
+            
+            // ===== PAYMENT FIELDS =====
+            if (payload.containsKey("paymentMethod")) {
+                b.setPaymentMethod(String.valueOf(payload.get("paymentMethod"))); // CASH or ONLINE
+            }
+            if (payload.containsKey("paymentId")) {
+                b.setPaymentId(String.valueOf(payload.get("paymentId"))); // Razorpay payment ID
+            }
+            if (payload.containsKey("transactionId")) {
+                b.setTransactionId(String.valueOf(payload.get("transactionId"))); // Razorpay order ID
+            }
+            if (payload.containsKey("paymentStatus")) {
+                b.setPaymentStatus(String.valueOf(payload.get("paymentStatus"))); // SUCCESS, FAILED, etc
+            }
+            // Set payment timestamp to now when payment is processed
+            if (payload.containsKey("paymentMethod")) {
+                b.setPaymentTimestamp(java.time.LocalDateTime.now());
             }
         }
 
