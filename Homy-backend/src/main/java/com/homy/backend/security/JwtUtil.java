@@ -52,4 +52,23 @@ public class JwtUtil {
     public Claims validateToken(String token) {
         return Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token).getBody();
     }
+
+    public Long extractUserId(String token) {
+        try {
+            Claims claims = validateToken(token);
+            String subject = claims.getSubject();
+            return Long.parseLong(subject);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public String extractEmail(String token) {
+        try {
+            Claims claims = validateToken(token);
+            return claims.get("email", String.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 }

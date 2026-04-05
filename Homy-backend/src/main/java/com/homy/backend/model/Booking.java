@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.time.LocalDateTime;
@@ -39,6 +41,14 @@ public class Booking {
     @Column(name = "total_amount", columnDefinition = "DOUBLE")
     private Double totalAmount;
 
+
+    @Column(name = "user_id")
+    private Long userId;
+
+    @ManyToOne
+    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    private User user;
+
     @Column(name = "customer_id")
     private Long customerId;
 
@@ -68,8 +78,7 @@ public class Booking {
     @Column(length = 256)
     private String cancelReason; // Reason for cancellation
 
-    @Column(length = 500)
-    private String adminNotes; // Admin notes during status update
+  
 
     @Column(length = 256)
     private String additionalServiceName; // Name of additional service approved by admin
@@ -80,6 +89,15 @@ public class Booking {
     @Column(name = "additional_services_json", columnDefinition = "LONGTEXT")
     private String additionalServicesJson; // JSON array of multiple services: [{"id":"1","name":"Service","price":100}]
 
+    @Column(name = "address_id")
+    private Long addressId; // Reference to UserAddress selected during booking
+
+    @Column(name = "latitude", columnDefinition = "DOUBLE")
+    private Double latitude; // Latitude of delivery address
+
+    @Column(name = "longitude", columnDefinition = "DOUBLE")
+    private Double longitude; // Longitude of delivery address
+
     @Column(name = "technician_id")
     private Long technicianId;
 
@@ -88,6 +106,25 @@ public class Booking {
 
     @Column(name = "technician_notes", length = 1000)
     private String technicianNotes; // Notes provided by technician upon completion
+
+    @Column(name = "admin_notes", length = 1000)
+    private String adminNotes; // Notes from admin
+
+    // ===== PAYMENT FIELDS =====
+    @Column(name = "payment_method", length = 20)
+    private String paymentMethod; // CASH or ONLINE
+
+    @Column(name = "payment_id", length = 256)
+    private String paymentId; // Razorpay payment ID (e.g., pay_xxx) or custom ID for cash
+
+    @Column(name = "transaction_id", length = 256)
+    private String transactionId; // Razorpay transaction/order ID (e.g., order_xxx)
+
+    @Column(name = "payment_status", length = 50)
+    private String paymentStatus; // PENDING / SUCCESS / FAILED / NOT_REQUIRED (for CASH)
+
+    @Column(name = "payment_timestamp")
+    private LocalDateTime paymentTimestamp; // When payment was processed
 
     public Booking() {}
 
@@ -113,8 +150,9 @@ public class Booking {
     public void setStatus(String status) { this.status = status; }
     public Double getTotalAmount() { return totalAmount; }
     public void setTotalAmount(Double totalAmount) { this.totalAmount = totalAmount; }
-    public Long getCustomerId() { return customerId; }
-    public void setCustomerId(Long customerId) { this.customerId = customerId; }
+    
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
     public String getReference() { return reference; }
     public void setReference(String reference) { this.reference = reference; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -141,8 +179,7 @@ public class Booking {
     public String getCancelReason() { return cancelReason; }
     public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
 
-    public String getAdminNotes() { return adminNotes; }
-    public void setAdminNotes(String adminNotes) { this.adminNotes = adminNotes; }
+
 
     public String getAdditionalServiceName() { return additionalServiceName; }
     public void setAdditionalServiceName(String additionalServiceName) { this.additionalServiceName = additionalServiceName; }
@@ -162,6 +199,28 @@ public class Booking {
     public String getTechnicianNotes() { return technicianNotes; }
     public void setTechnicianNotes(String technicianNotes) { this.technicianNotes = technicianNotes; }
 
+    public Long getCustomerId() { return customerId; }
+    public void setCustomerId(Long customerId) { this.customerId = customerId; }
+
+    public String getAdminNotes() { return adminNotes; }
+    public void setAdminNotes(String adminNotes) { this.adminNotes = adminNotes; }
+
+    // ===== PAYMENT GETTERS/SETTERS =====
+    public String getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public String getPaymentId() { return paymentId; }
+    public void setPaymentId(String paymentId) { this.paymentId = paymentId; }
+
+    public String getTransactionId() { return transactionId; }
+    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
+
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+
+    public LocalDateTime getPaymentTimestamp() { return paymentTimestamp; }
+    public void setPaymentTimestamp(LocalDateTime paymentTimestamp) { this.paymentTimestamp = paymentTimestamp; }
+
     // Transient fields to receive/store address information from client
     @Transient
     private String address;
@@ -169,9 +228,57 @@ public class Booking {
     @Transient
     private String latLong; // format: "lat,lon"
 
+    @Transient
+    private String technicianName;
+
+    @Transient
+    private String technicianPhone;
+
+    @Transient
+    private String assignedAt;
+
+    @Transient
+    private String startedAt;
+
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
 
     public String getLatLong() { return latLong; }
     public void setLatLong(String latLong) { this.latLong = latLong; }
+
+    public String getTechnicianName() { return technicianName; }
+    public void setTechnicianName(String technicianName) { this.technicianName = technicianName; }
+
+    public String getTechnicianPhone() { return technicianPhone; }
+    public void setTechnicianPhone(String technicianPhone) { this.technicianPhone = technicianPhone; }
+
+    public String getAssignedAt() { return assignedAt; }
+    public void setAssignedAt(String assignedAt) { this.assignedAt = assignedAt; }
+
+    public String getStartedAt() { return startedAt; }
+    public void setStartedAt(String startedAt) { this.startedAt = startedAt; }
+
+    public Long getUserId() { 
+        if (userId != null) return userId;
+        if (user != null) return user.getId();
+        return null;
+    }
+    
+    public void setUserId(Long userId) { 
+        this.userId = userId;  // Directly set the userId field for persistence
+        if (userId != null) {
+            User u = new User();
+            u.setId(userId);
+            this.user = u;
+        }
+    }
+
+    public Long getAddressId() { return addressId; }
+    public void setAddressId(Long addressId) { this.addressId = addressId; }
+
+    public Double getLatitude() { return latitude; }
+    public void setLatitude(Double latitude) { this.latitude = latitude; }
+
+    public Double getLongitude() { return longitude; }
+    public void setLongitude(Double longitude) { this.longitude = longitude; }
 }

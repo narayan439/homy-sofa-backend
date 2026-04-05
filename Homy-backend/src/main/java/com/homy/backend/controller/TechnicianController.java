@@ -155,14 +155,56 @@ public class TechnicianController {
 
     @PatchMapping("/api/admin/technicians/{id}/status")
     public ResponseEntity<?> updateTechnicianStatus(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        String status = body.getOrDefault("status", "");
-        var maybe = technicianRepository.findById(id);
-        if (maybe.isEmpty()) return ResponseEntity.status(404).body(Map.of("error", "Technician not found"));
-        Technician t = maybe.get();
-        boolean active = "active".equalsIgnoreCase(status);
-        t.setIsActive(active);
-        technicianRepository.save(t);
-        return ResponseEntity.ok(Map.of("success", true));
+        try {
+            String status = body.getOrDefault("status", "").trim().toLowerCase();
+            
+            if (status.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Status is required"));
+            }
+            
+            if (!status.equals("active") && !status.equals("inactive")) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Status must be 'active' or 'inactive'"));
+            }
+            
+            var maybe = technicianRepository.findById(id);
+            if (maybe.isEmpty()) {
+                return ResponseEntity.status(404).body(Map.of("error", "Technician not found"));
+            }
+            
+            Technician t = maybe.get();
+            boolean active = "active".equals(status);
+            t.setIsActive(active);
+            
+            Technician updated = technicianRepository.save(t);
+            
+            return ResponseEntity.ok(Map.of(
+                "success", true, 
+                "message", "Status updated successfully",
+                "technician", updated
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Failed to update status: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/api/admin/technicians/{id}/bookings")
+    public ResponseEntity<?> getTechnicianBookings(
+            @PathVariable Long id,
+            @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
+            @RequestParam(value = "size", required = false, defaultValue = "100") Integer size) {
+        try {
+            // Verify technician exists
+            var maybe = technicianRepository.findById(id);
+            if (maybe.isEmpty()) {
+                return ResponseEntity.status(404).body(Map.of("error", "Technician not found"));
+            }
+            
+            // Get technician's bookings
+            var result = technicianService.getBookingsForTechnician(id, page, size);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Failed to fetch bookings: " + e.getMessage()));
+        }
     }
 
     @GetMapping("/api/technician/bookings")
@@ -266,5 +308,124 @@ public class TechnicianController {
         boolean ok = technicianService.cancelJob(id, techId, reason);
         if (ok) return ResponseEntity.ok(Map.of("success", true));
         return ResponseEntity.status(404).body("Booking not found or technician mismatch");
+    }
+
+    /**
+     * Get current technician's profile from JWT token
+     */
+    @GetMapping("/api/technician/profile")
+    public ResponseEntity<?> getTechnicianProfile(@RequestHeader(value = "Authorization", required = false) String auth) {
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authorization header required"));
+        }
+        
+        try {
+            var claims = jwtUtil.validateToken(auth.substring(7));
+            String sub = claims.getSubject();
+            Long technicianId = Long.valueOf(sub);
+            var maybe = technicianRepository.findById(technicianId);
+            if (maybe.isEmpty()) {
+                return ResponseEntity.status(404).body(Map.of("error", "Technician not found"));
+            }
+            return ResponseEntity.ok(maybe.get());
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid token"));
+        }
+    }
+
+    /**
+     * Update current technician's profile from JWT token
+     */
+    @PutMapping("/api/technician/profile")
+    public ResponseEntity<?> updateTechnicianProfile(@RequestHeader(value = "Authorization", required = false) String auth,
+                                                     @RequestBody Technician updatedTech) {
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authorization header required"));
+        }
+        
+        try {
+            var claims = jwtUtil.validateToken(auth.substring(7));
+            String sub = claims.getSubject();
+            Long technicianId = Long.valueOf(sub);
+            var maybe = technicianRepository.findById(technicianId);
+            if (maybe.isEmpty()) {
+                return ResponseEntity.status(404).body(Map.of("error", "Technician not found"));
+            }
+            
+            Technician tech = maybe.get();
+            
+            // Update allowed fields
+            if (updatedTech.getName() != null && !updatedTech.getName().trim().isEmpty()) {
+                tech.setName(updatedTech.getName());
+            }
+            if (updatedTech.getEmail() != null && !updatedTech.getEmail().trim().isEmpty()) {
+                // Check if email is already in use by another technician
+                var byEmail = technicianRepository.findByEmail(updatedTech.getEmail());
+                if (byEmail.isPresent() && !byEmail.get().getId().equals(technicianId)) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Email already in use"));
+                }
+                tech.setEmail(updatedTech.getEmail());
+            }
+            if (updatedTech.getPhone() != null && !updatedTech.getPhone().trim().isEmpty()) {
+                // Check if phone is already in use by another technician
+                var byPhone = technicianRepository.findByPhone(updatedTech.getPhone());
+                if (byPhone.isPresent() && !byPhone.get().getId().equals(technicianId)) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Phone already in use"));
+                }
+                tech.setPhone(updatedTech.getPhone());
+            }
+            
+            Technician saved = technicianRepository.save(tech);
+            return ResponseEntity.ok(saved);
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid token"));
+        }
+    }
+
+    /**
+     * Change password for the current technician
+     */
+    @PutMapping("/api/technician/change-password")
+    public ResponseEntity<?> changePassword(@RequestHeader(value = "Authorization", required = false) String auth,
+                                           @RequestBody Map<String, String> body) {
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authorization header required"));
+        }
+        
+        String oldPassword = body.getOrDefault("oldPassword", "");
+        String newPassword = body.getOrDefault("newPassword", "");
+        
+        if (oldPassword.isEmpty() || newPassword.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Old and new passwords are required"));
+        }
+        
+        if (newPassword.length() < 4) {
+            return ResponseEntity.badRequest().body(Map.of("error", "New password must be at least 4 characters"));
+        }
+        
+        try {
+            var claims = jwtUtil.validateToken(auth.substring(7));
+            String sub = claims.getSubject();
+            Long technicianId = Long.valueOf(sub);
+            var maybe = technicianRepository.findById(technicianId);
+            if (maybe.isEmpty()) {
+                return ResponseEntity.status(404).body(Map.of("error", "Technician not found"));
+            }
+            
+            Technician tech = maybe.get();
+            
+            // Verify old password
+            if (!passwordEncoder.matches(oldPassword, tech.getPassword())) {
+                return ResponseEntity.status(401).body(Map.of("error", "Current password is incorrect"));
+            }
+            
+            // Set new password (encoded)
+            tech.setPassword(passwordEncoder.encode(newPassword));
+            technicianRepository.save(tech);
+            
+            return ResponseEntity.ok(Map.of("success", true, "message", "Password changed successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid token"));
+        }
     }
 }

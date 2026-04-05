@@ -20,6 +20,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     Page<Booking> findByTechnicianId(Long technicianId, Pageable pageable);
     long countByCustomerId(Long customerId);
     
+    // Optimized query with eager loading to avoid N+1 queries
+    @Query("SELECT DISTINCT b FROM Booking b WHERE b.technicianId = :technicianId ORDER BY b.createdAt DESC")
+    Page<Booking> findByTechnicianIdOptimized(@Param("technicianId") Long technicianId, Pageable pageable);
+    
     Optional<Booking> findByReferenceAndPhone(String reference, String phone);
     Optional<Booking> findByReference(String reference);
     List<Booking> findByPhone(String phone);
@@ -30,4 +34,11 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     // Get active booking for service (used to return reference number to frontend)
     @Query("SELECT b FROM Booking b WHERE b.customerId = :customerId AND b.service = :service AND b.status IN ('PENDING', 'ASSIGNED') ORDER BY b.createdAt DESC LIMIT 1")
     Booking findActiveBookingForService(@Param("customerId") Long customerId, @Param("service") String service);
+
+    // User bookings queries
+    List<Booking> findByUserId(Long userId);
+    List<Booking> findByUserIdOrderByCreatedAtDesc(Long userId);
+    Page<Booking> findByUserId(Long userId, Pageable pageable);
+    @Query("SELECT b FROM Booking b WHERE b.user.id = :userId ORDER BY b.createdAt DESC")
+    Page<Booking> findUserBookings(@Param("userId") Long userId, Pageable pageable);
 }
